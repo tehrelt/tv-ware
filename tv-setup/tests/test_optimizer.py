@@ -180,12 +180,12 @@ class OptimizerTests(unittest.TestCase):
                 adb = FakeAdb({DISABLE + ADS: output(marker), UNINSTALL + ADS: AdbResult(0, "", marker),
                                "pm list packages -d": output(""), "pm list packages": output(f"package:{ADS}")})
                 report = self.apply(adb, ApplyPlan(False, False, False, False, [ADS]))
-                self.assertEqual(adb.commands, [DISABLE + ADS, "pm list packages -d", UNINSTALL + ADS, "pm list packages"])
+                self.assertEqual(adb.commands, [DISABLE + ADS, UNINSTALL + ADS])
                 self.assertTrue(report.errors)
                 self.assertEqual(self.read_snapshot()["disabled_packages"], {})
 
     def test_adb_error_is_reported_and_other_changes_continue(self):
-        adb = FakeAdb({DISABLE + ADS: AdbError("transport timeout"), UNINSTALL + ADS: AdbError("offline"),
+        adb = FakeAdb({DISABLE + ADS: output("Failure"), UNINSTALL + ADS: output("Error: offline"),
                        "pm list packages -d": output(""), "pm list packages": output(f"package:{ADS}")})
         report = self.apply(adb, ApplyPlan(False, False, False, False, [ADS, GAMES]))
         self.assertTrue(any("offline" in error for error in report.errors))
@@ -270,13 +270,23 @@ class OptimizerTests(unittest.TestCase):
         self.assertFalse(self.apply(adb, ApplyPlan(False, False, False, True, []), info).errors)
         self.assertEqual(adb.commands, [DISABLE + STOCK])
 
-    def test_rollback_clears_home_when_original_was_unresolved(self):
-        clear = f"pm clear-package-preferred-activities {LAUNCHER_PACKAGE}"
-        adb = FakeAdb({"getprop ro.serialno": output("SER123"), clear: output("Error: cannot clear")})
+    def test_refuses_home_switch_and_stock_disable_without_original_home(self):
+        adb = FakeAdb()
         info = replace(self.info, home_component=None)
-        self.assertFalse(self.apply(adb, ApplyPlan(False, False, True, False, []), info).errors)
-        self.assertTrue(rollback_device(adb, SERIAL, self.state).errors)
-        self.assertIn(clear, adb.commands)
+        self.assertTrue(self.apply(adb, ApplyPlan(False, False, True, True, []), info).errors)
+        self.assertEqual(adb.commands, [])
+        info = replace(info, home_component=LAUNCHER_ACTIVITY)
+        self.assertTrue(self.apply(adb, ApplyPlan(False, False, False, True, []), info).errors)
+        self.assertEqual(adb.commands, [])
+
+    def test_rollback_reports_unrestorable_older_home_switch(self):
+        adb = FakeAdb({"getprop ro.serialno": output("SER123")})
+        self.apply(adb, ApplyPlan(False, False, False, False, []), replace(self.info, home_component=None))
+        data = {**self.read_snapshot(), "home_switched": True}
+        self.snapshot.write_text(json.dumps(data), encoding="utf-8")
+        report = rollback_device(adb, SERIAL, self.state)
+        self.assertTrue(any("original HOME" in error for error in report.errors))
+        self.assertFalse(any("preferred-activities" in cmd or cmd.startswith(SET_HOME) for cmd in adb.commands))
 
     def test_interrupted_package_mutation_is_recoverable(self):
         for method, mutation, query, listing, restore in (
@@ -291,7 +301,7 @@ class OptimizerTests(unittest.TestCase):
                             raise KeyboardInterrupt
                         return super().shell(serial, command, timeout)
 
-                adb = InterruptedAdb({DISABLE + ADS: AdbError("denied")})
+                adb = InterruptedAdb({DISABLE + ADS: output("Failure")})
                 with self.assertRaises(KeyboardInterrupt):
                     self.apply(adb, ApplyPlan(False, False, False, False, [ADS]))
                 adb = FakeAdb({"getprop ro.serialno": output("SER123"), query: output(listing)})
@@ -341,3 +351,45 @@ class OptimizerTests(unittest.TestCase):
         self.assertTrue(self.apply(adb, ApplyPlan(False, False, False, False, [ADS])).errors)
         self.assertEqual(adb.commands, [DISABLE + ADS, "pm list packages -d"])
         self.assertEqual(self.read_snapshot()["pending_package"], {"package": ADS, "method": "disable"})
+
+    def test_ambiguous_disable_without_visible_change_keeps_pending(self):
+        for failure in (AdbError("timeout"), AdbResult(1, "", ""), AdbResult(1, "", "error: device offline")):
+            with self.subTest(failure=failure):
+                adb = FakeAdb({DISABLE + ADS: failure})
+                self.assertTrue(self.apply(adb, ApplyPlan(False, False, False, False, [ADS])).errors)
+                self.assertEqual(adb.commands, [DISABLE + ADS, "pm list packages -d"])
+                self.assertEqual(self.read_snapshot()["pending_package"], {"package": ADS, "method": "disable"})
+                retry = FakeAdb()
+                self.assertTrue(self.apply(retry, ApplyPlan(True, False, False, False, [ADS])).errors)
+                self.assertEqual(retry.commands, [])
+                recovery = FakeAdb({"getprop ro.serialno": output("SER123")})
+                self.assertFalse(rollback_device(recovery, SERIAL, self.state).errors)
+
+    def test_rollback_restores_pending_even_before_change_is_visible(self):
+        enable = f"pm enable {ADS}"
+        install = f"cmd package install-existing {ADS}"
+        self.apply(FakeAdb(), ApplyPlan(False, False, False, False, []))
+        for method, inventory, expected in (("disable", {}, [enable]),
+                ("uninstall", {"pm list packages": output(f"package:{ADS}")}, [install, enable])):
+            with self.subTest(method=method):
+                data = {**self.read_snapshot(), "pending_package": {"package": ADS, "method": method}}
+                self.snapshot.write_text(json.dumps(data), encoding="utf-8")
+                responses = {"getprop ro.serialno": output("SER123"), **inventory}
+                adb = FakeAdb({**responses, enable: output("Error: cannot enable")})
+                self.assertTrue(rollback_device(adb, SERIAL, self.state).errors)
+                self.assertIn("pending_package", self.read_snapshot())
+                adb = FakeAdb(responses)
+                self.assertFalse(rollback_device(adb, SERIAL, self.state).errors)
+                self.assertEqual([cmd for cmd in adb.commands if cmd in (install, enable)], expected)
+                self.assertNotIn("pending_package", self.read_snapshot())
+
+    def test_legacy_snapshot_blocks_apply_and_rollback(self):
+        self.state.mkdir()
+        legacy = self.state / "SER123.json"
+        legacy.write_text("{}", encoding="utf-8")
+        adb = FakeAdb({"getprop ro.serialno": output("SER123")})
+        for report in (self.apply(adb, ApplyPlan(True, False, False, False, [ADS])),
+                       rollback_device(adb, SERIAL, self.state)):
+            self.assertTrue(any(str(legacy) in error and "legacy" in error.lower() for error in report.errors))
+        self.assertEqual(adb.commands, ["getprop ro.serialno"])
+        self.assertEqual(list(self.state.glob("*.json")), [legacy])

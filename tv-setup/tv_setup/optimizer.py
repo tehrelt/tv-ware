@@ -27,6 +27,11 @@ _FAILURE = re.compile(
     r"java\.lang\.\w*Exception\b|Unknown package:|DELETE_FAILED_|INSTALL_FAILED_)",
     re.IGNORECASE | re.MULTILINE,
 )
+_TRANSPORT_FAILURE = re.compile(
+    r"^\s*(?:adb:\s*error:|error:\s*(?:device\b|no devices\b|more than one\b|"
+    r"closed\b|protocol fault\b|transport\b|connection\b))",
+    re.IGNORECASE | re.MULTILINE,
+)
 _PROTECTED = {LAUNCHER_PACKAGE, "com.android.settings"}
 _SET_HOME = "cmd package set-home-activity --user current"
 _WHITELIST = "dumpsys deviceidle whitelist"
@@ -134,7 +139,19 @@ def _validate_snapshot(snapshot: dict, device_id: str) -> dict:
 
 
 def _load_snapshot(path: Path, device_id: str) -> dict:
-    return _validate_snapshot(json.loads(path.read_text(encoding="utf-8")), device_id)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        legacy = path.with_name(f"{_safe_id(device_id)}.json")
+        if legacy != path:
+            try:
+                legacy.lstat()
+            except FileNotFoundError:
+                pass
+            else:
+                raise ValueError(f"Cannot verify identity of legacy snapshot: {legacy}") from None
+        raise
+    return _validate_snapshot(json.loads(text), device_id)
 
 
 def _save_snapshot(path: Path, snapshot: dict) -> None:
@@ -151,10 +168,18 @@ def _save_snapshot(path: Path, snapshot: dict) -> None:
         temp_path.unlink(missing_ok=True)
 
 
+class _CommandRejected(AdbError):
+    """The remote command explicitly reported a rejection."""
+
+
 def _command(adb: AdbClient, serial: str, command: str) -> str:
     result = adb.shell(serial, command)
     output = f"{result.stdout}\n{result.stderr}".strip()
-    if result.returncode or _FAILURE.search(output):
+    if _TRANSPORT_FAILURE.search(result.stderr):
+        raise AdbError(f"{command}: {output}")
+    if _FAILURE.search(output):
+        raise _CommandRejected(f"{command}: {output}")
+    if result.returncode:
         raise AdbError(f"{command}: {output or result.returncode}")
     return result.stdout.strip()
 
@@ -178,9 +203,8 @@ def apply_optimizations(
                                                animation_scales=inspection.animation_scales, disabled_packages={}),
                                           device_id)
             _save_snapshot(path, snapshot)
-        if pending := snapshot.get("pending_package"):
-            changed = _package_changed(adb, serial, **pending)
-            snapshot = _finish_package(path, snapshot, changed)
+        if "pending_package" in snapshot:
+            raise ValueError("Pending package mutation; run rollback before applying changes")
     except (AdbError, OSError, ValueError) as exc:
         _record(report.errors, f"Snapshot {path}: {exc}", log_cb)
         return report
@@ -206,20 +230,7 @@ def apply_optimizations(
 
     previous_home = _home_package(inspection.home_component)
     if plan.set_home_launcher or plan.disable_stock_launcher:
-        switched = False
-        installed = LAUNCHER_PACKAGE in inspection.installed_packages
-        if not installed:
-            _record(report.errors, f"Cannot change launchers: {LAUNCHER_PACKAGE} is not installed", log_cb)
-        elif plan.set_home_launcher:
-            snapshot, switched = _switch_home(path, snapshot, run, report, log_cb)
-        if installed and plan.disable_stock_launcher:
-            if switched or previous_home == LAUNCHER_PACKAGE:
-                if stock := _stock_package(snapshot, inspection):
-                    disable(stock)
-            elif not plan.set_home_launcher:
-                _record(report.errors, f"Cannot disable stock HOME before {LAUNCHER_PACKAGE} is active", log_cb)
-        if switched:
-            run("input keyevent KEYCODE_HOME")
+        _apply_launcher(snapshot, inspection, plan, run, disable, report, log_cb)
     for pkg in plan.packages_to_disable:
         if not _matches(_PACKAGE, pkg):
             _record(report.errors, f"Invalid package name: {pkg!r}", log_cb)
@@ -241,17 +252,25 @@ def _stock_package(snapshot: dict, inspection: DeviceInspection) -> str | None:
                  if pkg in candidates and pkg not in inspection.disabled_packages), None)
 
 
-def _switch_home(path: Path, snapshot: dict, run: Callable[[str], bool], report: ApplyReport,
-                 log_cb: Callable[[str], None] | None) -> tuple[dict, bool]:
-    if snapshot["home_component"] is None and not snapshot.get("home_switched"):
-        updated = {**snapshot, "home_switched": True}
-        try:
-            _save_snapshot(path, updated)
-        except OSError as exc:
-            _record(report.errors, f"Cannot journal HOME switch: {exc}", log_cb)
-            return snapshot, False
-        snapshot = updated
-    return snapshot, run(f"{_SET_HOME} {LAUNCHER_ACTIVITY}")
+def _apply_launcher(
+    snapshot: dict, inspection: DeviceInspection, plan: ApplyPlan, run: Callable[[str], bool],
+    disable: Callable[[str], None], report: ApplyReport, log_cb: Callable[[str], None] | None,
+) -> None:
+    if snapshot["home_component"] is None:
+        _record(report.errors, "Cannot change launchers: original HOME is unknown", log_cb)
+        return
+    if LAUNCHER_PACKAGE not in inspection.installed_packages:
+        _record(report.errors, f"Cannot change launchers: {LAUNCHER_PACKAGE} is not installed", log_cb)
+        return
+    switched = plan.set_home_launcher and run(f"{_SET_HOME} {LAUNCHER_ACTIVITY}")
+    if plan.disable_stock_launcher:
+        if switched or _home_package(inspection.home_component) == LAUNCHER_PACKAGE:
+            if stock := _stock_package(snapshot, inspection):
+                disable(stock)
+        elif not plan.set_home_launcher:
+            _record(report.errors, f"Cannot disable stock HOME before {LAUNCHER_PACKAGE} is active", log_cb)
+    if switched:
+        run("input keyevent KEYCODE_HOME")
 
 
 def _record(messages: list[str], message: str, log_cb: Callable[[str], None] | None) -> None:
@@ -302,9 +321,13 @@ def _disable_package(
             try:
                 _command(adb, serial, command)
                 changed = True
-            except AdbError as exc:
+            except _CommandRejected as exc:
                 errors.append(str(exc))
+                changed = False
+            except AdbError as exc:
                 changed = _package_changed(adb, serial, pkg, method)
+                if not changed:
+                    raise AdbError(f"{exc}; package may still change, rollback required") from exc
             snapshot = _finish_package(path, snapshot, changed)
         except (AdbError, OSError) as exc:
             _record(report.errors, f"Cannot complete {method} for {pkg}: {exc}", log_cb)
@@ -319,12 +342,19 @@ def _disable_package(
 def _recover_pending(adb: AdbClient, serial: str, path: Path, snapshot: dict, report: ApplyReport,
                      log_cb: Callable[[str], None] | None) -> dict:
     pending = snapshot["pending_package"]
-    try:
-        changed = _package_changed(adb, serial, **pending)
-        return _finish_package(path, snapshot, changed)
-    except (AdbError, OSError) as exc:
-        _record(report.errors, f"Cannot reconcile pending package: {exc}", log_cb)
+    pkg, method = pending["package"], pending["method"]
+    if method == "uninstall" and not _run(adb, serial, _restore_package(pkg, method), report, log_cb):
         return snapshot
+    if not _run(adb, serial, _restore_package(pkg, "disable"), report, log_cb):
+        return snapshot
+    updated = {key: value for key, value in snapshot.items() if key != "pending_package"}
+    updated["disabled_packages"] = {key: value for key, value in snapshot["disabled_packages"].items() if key != pkg}
+    try:
+        _save_snapshot(path, updated)
+    except OSError as exc:
+        _record(report.errors, f"Cannot clear pending package: {exc}", log_cb)
+        return snapshot
+    return updated
 
 
 def rollback_device(
@@ -348,7 +378,7 @@ def rollback_device(
     if home := snapshot["home_component"]:
         _run(adb, serial, f"{_SET_HOME} {shlex.quote(home)}", report, log_cb)
     elif snapshot.get("home_switched"):
-        _run(adb, serial, f"pm clear-package-preferred-activities {LAUNCHER_PACKAGE}", report, log_cb)
+        _record(report.errors, "Cannot roll back launcher: original HOME is unknown", log_cb)
     for key, value in snapshot["animation_scales"].items():
         command = f"settings delete global {key}" if value == "null" else f"settings put global {key} {value}"
         _run(adb, serial, command, report, log_cb)
