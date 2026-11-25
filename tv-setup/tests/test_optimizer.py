@@ -17,6 +17,9 @@ SET_HOME = "cmd package set-home-activity --user current "
 DISABLE = "pm disable-user --user 0 "
 UNINSTALL = "pm uninstall -k --user 0 "
 WHITELIST = "dumpsys deviceidle whitelist"
+BOOT = "cat /proc/sys/kernel/random/boot_id"
+BOOT_A = "00000000-0000-4000-8000-000000000001"
+BOOT_B = "00000000-0000-4000-8000-000000000002"
 RESOLVE = "cmd package resolve-activity"
 
 
@@ -31,6 +34,8 @@ class FakeAdb:
 
     def shell(self, serial, command, timeout=15.0):
         self.commands.append(command)
+        if command == BOOT and command not in self.responses:
+            return output(BOOT_A)
         if command == "pm list packages -d" and command not in self.responses:
             return output("")
         for prefix, result in self.responses.items():
@@ -307,6 +312,8 @@ class OptimizerTests(unittest.TestCase):
                 with self.assertRaises(KeyboardInterrupt):
                     self.apply(adb, ApplyPlan(False, False, False, False, [ADS]))
                 adb = FakeAdb({"getprop ro.serialno": output("SER123"), "pm list packages": output(f"package:{ADS}")})
+                self.assertTrue(rollback_device(adb, SERIAL, self.state).errors)
+                adb.responses[BOOT] = output(BOOT_B)
                 self.assertFalse(rollback_device(adb, SERIAL, self.state).errors)
                 self.assertIn(restore, adb.commands)
                 self.assertNotIn("pending_package", self.read_snapshot())
@@ -365,6 +372,8 @@ class OptimizerTests(unittest.TestCase):
                 self.assertTrue(self.apply(retry, ApplyPlan(True, False, False, False, [ADS])).errors)
                 self.assertEqual(retry.commands, [])
                 recovery = FakeAdb({"getprop ro.serialno": output("SER123"), "pm list packages": output(f"package:{ADS}")})
+                self.assertTrue(rollback_device(recovery, SERIAL, self.state).errors)
+                recovery.responses[BOOT] = output(BOOT_B)
                 self.assertFalse(rollback_device(recovery, SERIAL, self.state).errors)
 
     def test_rollback_restores_pending_even_before_change_is_visible(self):
@@ -381,8 +390,21 @@ class OptimizerTests(unittest.TestCase):
                 self.assertTrue(rollback_device(adb, SERIAL, self.state).errors)
                 self.assertIn("pending_package", self.read_snapshot())
                 adb = FakeAdb(responses)
-                self.assertFalse(rollback_device(adb, SERIAL, self.state).errors)
+                # Both inventory checks pass before the original mutation takes effect.
+                self.assertTrue(rollback_device(adb, SERIAL, self.state).errors)
+                self.assertIn("pending_package", self.read_snapshot())
                 self.assertEqual([cmd for cmd in adb.commands if cmd in (install, enable)], expected)
+                # The queued command lands after rollback returned, before reboot.
+                inventory_command = "pm list packages -d" if method == "disable" else "pm list packages"
+                adb.responses = {inventory_command: output(f"package:{ADS}" if method == "disable" else ""),
+                                 **{k: v for k, v in responses.items() if k != inventory_command}}
+                adb.responses[BOOT] = output(BOOT_B)
+                self.assertTrue(rollback_device(adb, SERIAL, self.state).errors)
+                adb.responses[BOOT] = output("unknown")
+                adb.responses[inventory_command] = output("" if method == "disable" else f"package:{ADS}")
+                self.assertTrue(rollback_device(adb, SERIAL, self.state).errors)
+                adb.responses[BOOT] = output(BOOT_B)
+                self.assertFalse(rollback_device(adb, SERIAL, self.state).errors)
                 self.assertNotIn("pending_package", self.read_snapshot())
 
     def test_legacy_snapshot_blocks_apply_and_rollback(self):
@@ -446,6 +468,7 @@ class OptimizerTests(unittest.TestCase):
                 self.assertIn("pending_package", self.read_snapshot())
                 active = FakeAdb({"getprop ro.serialno": output("SER123"),
                                   "pm list packages": output(f"package:{ADS}")})
+                active.responses[BOOT] = output(BOOT_B)
                 self.assertFalse(rollback_device(active, SERIAL, self.state).errors)
                 self.assertNotIn("pending_package", self.read_snapshot())
                 self.assertEqual(self.read_snapshot()["disabled_packages"], {ADS: method})

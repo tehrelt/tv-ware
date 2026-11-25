@@ -19,6 +19,7 @@ from .presets import (
     STOCK_LAUNCHER_PACKAGES,
 )
 
+_BOOT_ID = r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}"
 _PACKAGE = r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*"
 _COMPONENT = rf"{_PACKAGE}/\.?[A-Za-z_$][A-Za-z0-9_.$]*"
 _SCALE = r"(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?|null"
@@ -129,6 +130,8 @@ def _validate_snapshot(snapshot: dict, device_id: str) -> dict:
         or pending.get("method") not in ("disable", "uninstall")
     ):
         raise ValueError("invalid pending package record")
+    if "recovery_boot_id" in snapshot and (not pending or not _matches(_BOOT_ID, snapshot["recovery_boot_id"])):
+        raise ValueError("invalid package recovery boot ID")
     home, scales, packages = (snapshot[key] for key in ("home_component", "animation_scales", "disabled_packages"))
     if home is not None and not _matches(_COMPONENT, home):
         raise ValueError("invalid snapshot HOME")
@@ -306,6 +309,7 @@ def _package_changed(adb: AdbClient, serial: str, package: str, method: str) -> 
 
 def _finish_package(path: Path, snapshot: dict, changed: bool) -> dict:
     updated = snapshot.copy()
+    updated.pop("recovery_boot_id", None)
     pending = updated.pop("pending_package")
     if changed:
         updated["disabled_packages"] = {**snapshot["disabled_packages"], pending["package"]: pending["method"]}
@@ -348,6 +352,17 @@ def _recover_pending(adb: AdbClient, serial: str, path: Path, snapshot: dict, re
                      log_cb: Callable[[str], None] | None) -> dict:
     pending = snapshot["pending_package"]
     pkg, method = pending["package"], pending["method"]
+    # A new boot fences commands from the interrupted ADB session; inventory cannot.
+    try:
+        boot = _read(adb, serial, "cat /proc/sys/kernel/random/boot_id")
+        if not _matches(_BOOT_ID, boot):
+            raise AdbError("cannot identify current device boot")
+        if "recovery_boot_id" not in snapshot:
+            snapshot = {**snapshot, "recovery_boot_id": boot}
+            _save_snapshot(path, snapshot)
+    except (AdbError, OSError) as exc:
+        _record(report.errors, f"Cannot establish package recovery boot: {exc}", log_cb)
+        return snapshot
     if method == "uninstall" and not _run(adb, serial, _restore_package(pkg, method), report, log_cb):
         return snapshot
     if not _run(adb, serial, _restore_package(pkg, "disable"), report, log_cb):
@@ -357,6 +372,8 @@ def _recover_pending(adb: AdbClient, serial: str, path: Path, snapshot: dict, re
         disabled = _package_changed(adb, serial, pkg, "disable")
         if missing or disabled:
             raise AdbError(f"{pkg} is still missing or disabled")
+        if boot == snapshot["recovery_boot_id"]:
+            raise AdbError(f"{pkg} may still change; reboot the TV and retry rollback")
         return _finish_package(path, snapshot, True)
     except (AdbError, OSError) as exc:
         _record(report.errors, f"Cannot verify or record recovery: {exc}", log_cb)
