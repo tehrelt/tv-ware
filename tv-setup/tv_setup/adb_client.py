@@ -1,5 +1,6 @@
 """Locate Windows platform-tools and run ADB commands."""
 
+import logging
 import os
 import shutil
 import stat
@@ -85,6 +86,13 @@ def safe_extract_zip(zip_path: Path, dest_dir: Path) -> None:
         raise ValueError(f"Corrupt ZIP archive: {exc}") from exc
 
 
+def _cleanup_directory(path: Path) -> None:
+    try:
+        shutil.rmtree(path)
+    except OSError as exc:
+        logging.getLogger(__name__).warning("Could not clean up %s: %s", path, exc)
+
+
 def _publish_platform_tools(staged: Path, installed: Path) -> None:
     if not os.path.lexists(installed):
         staged.replace(installed)
@@ -107,7 +115,7 @@ def _publish_platform_tools(staged: Path, installed: Path) -> None:
             raise AdbError(f"Could not restore platform-tools; backup retained at {backup}") from exc
         backup_dir.rmdir()
         raise
-    shutil.rmtree(backup_dir)
+    _cleanup_directory(backup_dir)
 
 
 def download_platform_tools(
@@ -127,13 +135,15 @@ def download_platform_tools(
                 downloaded += len(chunk)
                 if progress_cb is not None:
                     progress_cb(downloaded, total)
-        with tempfile.TemporaryDirectory(dir=tools_dir) as staging_dir:
-            staging = Path(staging_dir)
+        staging = Path(tempfile.mkdtemp(dir=tools_dir))
+        try:
             safe_extract_zip(archive_path, staging)
             staged_adb = staging / _ADB_RELATIVE_PATH
             if not staged_adb.is_file():
                 raise AdbError("platform-tools archive did not provide adb.exe")
             _publish_platform_tools(staged_adb.parent, tools_dir / _ADB_RELATIVE_PATH.parent)
+        finally:
+            _cleanup_directory(staging)
         return tools_dir / _ADB_RELATIVE_PATH
     finally:
         archive_path.unlink(missing_ok=True)

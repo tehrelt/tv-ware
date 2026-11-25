@@ -128,6 +128,24 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual(leftover.read_bytes(), b"old")
         self.assertEqual(list(self.tools.iterdir()), [installed])
 
+    def test_cleanup_failure_does_not_fail_successful_publication(self):
+        installed = self.tools / "platform-tools"
+        installed.mkdir(parents=True)
+        (installed / "leftover.dll").write_bytes(b"old")
+        response = io.BytesIO(make_zip(("platform-tools/adb.exe", b"new")))
+        response.headers = {}
+
+        with patch("urllib.request.urlopen", return_value=response), patch(
+            "shutil.rmtree", side_effect=PermissionError("cleanup denied"),
+        ) as remove, self.assertLogs("tv_setup.adb_client", level="WARNING") as logs:
+            self.assertEqual(download_platform_tools(self.tools), installed / "adb.exe")
+
+        self.assertEqual((installed / "adb.exe").read_bytes(), b"new")
+        self.assertEqual(len(remove.call_args_list), 2)
+        for call in remove.call_args_list:
+            self.assertIn(str(call.args[0]), "\n".join(logs.output))
+        self.assertFalse(list(self.tools.glob("*.zip.part")))
+
     def test_download_reports_progress_and_removes_partial_archive(self):
         data = make_zip(("platform-tools/", b""), ("platform-tools/adb.exe", b"adb"))
         response = io.BytesIO(data)
