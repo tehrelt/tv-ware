@@ -10,6 +10,14 @@
 - `patches/device_xiaomi_jaws.patch` — подключение `vendor/custom/custom.mk` в `device/xiaomi/jaws/lineage_jaws.mk`.
 - `screenshots/` — скриншоты лаунчера с эмулятора Android TV 12 (`home.png`, `grid.png`, `settings.png`, `context.png`).
 
+## tv-setup
+
+`tv-setup/` — приложение для Windows 11 (Python 3.12) для настройки Android TV. Команда `tv-setup\run.bat` создаёт виртуальное окружение и устанавливает зависимости. Пока готов только каркас: запуск интерфейса станет доступен после добавления `tv_setup.gui`.
+
+[Спецификация tv-setup](docs/superpowers/specs/2026-11-25-tv-setup-design.md).
+
+CI публикует `tv-launcher.apk` в релизе `launcher-latest`. Для постоянной подписи задайте `KEYSTORE_BASE64` и `KEYSTORE_PROPERTIES` как Base64 содержимого `release.jks` и `keystore.properties` соответственно; в свойствах укажите `storeFile=release.jks`. Без обоих секретов используется отладочная подпись.
+
 ## Бинарные зависимости
 
 Сторонние APK (`vendor/custom/prebuilt/Happ/Happ.apk`, `~/custom_apks/*.apk`) и ключи подписи исключены из git через `.gitignore`.

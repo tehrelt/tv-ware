@@ -1,0 +1,46 @@
+name: Release TV Launcher
+
+on:
+  push:
+    branches: [main]
+    paths: ['tv-launcher/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - name: Configure release signing
+        working-directory: tv-launcher
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PROPERTIES: ${{ secrets.KEYSTORE_PROPERTIES }}
+        run: |
+          if [[ -n "$KEYSTORE_BASE64" && -n "$KEYSTORE_PROPERTIES" ]]; then
+            umask 077
+            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > release.jks
+            printf '%s' "$KEYSTORE_PROPERTIES" | base64 --decode > keystore.properties
+          fi
+      - name: Build launcher APK
+        working-directory: tv-launcher
+        run: ./gradlew --console=plain :app:checkReleaseAarMetadata :app:assembleRelease
+      - name: Stage launcher APK
+        run: cp tv-launcher/app/build/outputs/apk/release/app-release.apk tv-launcher.apk
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: launcher-latest
+          make_latest: false
+          fail_on_unmatched_files: true
+          files: tv-launcher.apk
