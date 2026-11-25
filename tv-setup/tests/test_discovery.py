@@ -67,7 +67,10 @@ class DiscoveryTests(unittest.TestCase):
             UsbOrTcpDevice("usb:serial", "unauthorized", "", "", "1"),
             UsbOrTcpDevice("usb123", "device", "Model", "", "2"),
             UsbOrTcpDevice("192.168.31.12:5555", "unauthorized", "", "", "3"),
-        ], [MdnsRecord("_adb._tcp.local.", "Legacy", "192.168.31.13", 5556)], ["192.168.31.12"])
+        ], [
+            MdnsRecord("_adb._tcp.local.", "Unauthorized legacy", "192.168.31.12", 5555),
+            MdnsRecord("_adb._tcp.local.", "Legacy", "192.168.31.13", 5556),
+        ], ["192.168.31.12"])
         self.assertEqual([device.status for device in merged], [
             DeviceStatus.CONNECTED, DeviceStatus.READY, DeviceStatus.UNAUTHORIZED, DeviceStatus.UNAUTHORIZED,
         ])
@@ -101,19 +104,39 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(run.call_args.kwargs["timeout"], 5)
         self.assertEqual(run.call_args.kwargs["creationflags"], getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
-    @patch.object(discovery.socket, "gethostbyname_ex")
+    def test_tls_ready_at_another_port_wins_over_unauthorized_legacy(self):
+        device, = discovery.merge_discovered_devices(
+            [UsbOrTcpDevice("192.168.31.42:5555", "unauthorized", "", "", "1")],
+            [MdnsRecord("_adb-tls-connect._tcp.local.", "TV", "192.168.31.42", 41234),
+             MdnsRecord("_adb-tls-pairing._tcp.local.", "Pair", "192.168.31.42", 37123)],
+            ["192.168.31.42"],
+        )
+        self.assertEqual(device.status, DeviceStatus.READY)
+        self.assertEqual((device.port, device.pairing_port), (41234, 37123))
+
     @patch.object(discovery.subprocess, "run")
-    def test_falls_back_when_powershell_fails(self, run, resolve):
-        resolve.return_value = ("host", [], ["192.168.31.73"])
+    def test_fallback_retains_adapter_names_for_subnet_filtering(self, run):
+        adapters = [
+            ("vEthernet (Default Switch)", "172.29.128.1", 20),
+            ("Meta", "198.18.0.1", 30),
+            ("Беспроводная сеть", "192.168.31.73", 24),
+        ]
         run.side_effect = [subprocess.TimeoutExpired("powershell", 5), FileNotFoundError(),
                            subprocess.CompletedProcess([], 1, "[]"), subprocess.CompletedProcess([], 0, "bad json")]
-        for _ in range(4):
-            self.assertEqual([(ip, prefix) for _, ip, prefix in discovery.get_local_ipv4_interfaces()], [
-                ("192.168.31.73", 24),
-            ])
-        run.side_effect = FileNotFoundError()
-        resolve.side_effect = OSError()
-        self.assertEqual(discovery.get_local_ipv4_interfaces(), [])
+        with patch.object(discovery, "_windows_ipv4_interfaces", return_value=adapters):
+            for _ in range(4):
+                interfaces = discovery.get_local_ipv4_interfaces()
+                self.assertEqual(interfaces, adapters)
+                self.assertEqual(discovery.extract_scan_subnets(interfaces), [
+                    ipaddress.IPv4Network("192.168.31.0/24"),
+                ])
+
+    @patch.object(discovery.socket, "gethostbyname_ex", return_value=("host", [], ["172.29.128.1"]))
+    @patch.object(discovery.subprocess, "run", side_effect=FileNotFoundError())
+    def test_fallback_without_adapter_metadata_returns_no_candidates(self, run, resolve):
+        with patch.object(discovery, "_windows_ipv4_interfaces", side_effect=OSError()):
+            self.assertEqual(discovery.get_local_ipv4_interfaces(), [])
+        resolve.assert_not_called()
 
     @patch.object(discovery.socket, "create_connection")
     def test_scan_reports_open_ports_and_closes_connections(self, connect):

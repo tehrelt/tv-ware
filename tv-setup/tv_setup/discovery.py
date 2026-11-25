@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import ipaddress
 import json
 import logging
@@ -9,6 +10,7 @@ import socket
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
+from ctypes import wintypes
 from dataclasses import dataclass, replace
 from enum import Enum
 
@@ -79,6 +81,82 @@ def extract_scan_subnets(interfaces: list[tuple[str, str, int]]) -> list[ipaddre
     return list(dict.fromkeys(subnets))
 
 
+class _SocketAddress(ctypes.Structure):
+    _fields_ = [("address", ctypes.c_void_p), ("length", ctypes.c_int)]
+
+
+class _UnicastAddress(ctypes.Structure):
+    pass
+
+
+_UnicastAddress._fields_ = [
+    ("alignment", ctypes.c_uint64),
+    ("next", ctypes.POINTER(_UnicastAddress)),
+    ("socket_address", _SocketAddress),
+    ("prefix_origin", ctypes.c_int),
+    ("suffix_origin", ctypes.c_int),
+    ("dad_state", ctypes.c_int),
+    ("valid_lifetime", wintypes.ULONG),
+    ("preferred_lifetime", wintypes.ULONG),
+    ("lease_lifetime", wintypes.ULONG),
+    ("prefix_length", ctypes.c_ubyte),
+]
+
+
+class _AdapterAddress(ctypes.Structure):
+    pass
+
+
+_AdapterAddress._fields_ = [
+    ("alignment", ctypes.c_uint64),
+    ("next", ctypes.POINTER(_AdapterAddress)),
+    ("adapter_name", ctypes.c_char_p),
+    ("first_unicast", ctypes.POINTER(_UnicastAddress)),
+    ("first_anycast", ctypes.c_void_p),
+    ("first_multicast", ctypes.c_void_p),
+    ("first_dns_server", ctypes.c_void_p),
+    ("dns_suffix", wintypes.LPWSTR),
+    ("description", wintypes.LPWSTR),
+    ("friendly_name", wintypes.LPWSTR),
+]
+
+
+def _windows_ipv4_interfaces() -> list[tuple[str, str, int]]:
+    if not hasattr(ctypes, "WinDLL"):
+        return []
+    get_adapters = ctypes.WinDLL("iphlpapi").GetAdaptersAddresses
+    get_adapters.argtypes = (wintypes.ULONG, wintypes.ULONG, ctypes.c_void_p,
+                            ctypes.POINTER(_AdapterAddress), ctypes.POINTER(wintypes.ULONG))
+    get_adapters.restype = wintypes.ULONG
+    size = wintypes.ULONG(15_000)
+    for _ in range(3):
+        buffer = ctypes.create_string_buffer(size.value)
+        adapter = ctypes.cast(buffer, ctypes.POINTER(_AdapterAddress))
+        status = get_adapters(socket.AF_INET, 0, None, adapter, ctypes.byref(size))
+        if status != 111:  # ERROR_BUFFER_OVERFLOW: Windows supplied the new size.
+            break
+    if status:
+        raise ctypes.WinError(status)
+
+    interfaces = []
+    while adapter:
+        entry = adapter.contents
+        alias = entry.friendly_name
+        address = entry.first_unicast
+        while alias and address:
+            unicast = address.contents
+            sockaddr = unicast.socket_address
+            if sockaddr.address and sockaddr.length >= 16:
+                family = ctypes.c_ushort.from_address(sockaddr.address).value
+                if family == socket.AF_INET:
+                    # sockaddr_in stores four IPv4 octets after family and port.
+                    ip = socket.inet_ntoa(ctypes.string_at(sockaddr.address + 4, 4))
+                    interfaces.append((alias, ip, unicast.prefix_length))
+            address = unicast.next
+        adapter = entry.next
+    return interfaces
+
+
 def get_local_ipv4_interfaces() -> list[tuple[str, str, int]]:
     try:
         result = subprocess.run(
@@ -97,9 +175,9 @@ def get_local_ipv4_interfaces() -> list[tuple[str, str, int]]:
     except (OSError, subprocess.SubprocessError, ValueError) as exc:
         logger.debug("PowerShell IPv4 discovery failed: %s", exc)
     try:
-        return [("hostname", ip, 24) for ip in socket.gethostbyname_ex(socket.gethostname())[2]]
+        return _windows_ipv4_interfaces()
     except OSError as exc:
-        logger.debug("Hostname IPv4 discovery failed: %s", exc)
+        logger.debug("Windows adapter enumeration failed: %s", exc)
         return []
 
 
@@ -208,11 +286,11 @@ def merge_discovered_devices(
     merged: dict[tuple[bool, str], DiscoveredDevice] = {}
     priority = {status: index for index, status in enumerate(DeviceStatus)}
 
-    def merge_rank(device: DiscoveredDevice) -> int:
-        # ADB authorization results outrank a successful TCP handshake.
-        if device.status == DeviceStatus.CONNECTED:
-            return -1
-        return 0 if device.status == DeviceStatus.UNAUTHORIZED else priority[device.status]
+    adb_devices = [_adb_device(device) for device in usb_devices]
+    unauthorized_endpoints = {
+        (device.ip, device.port) for device in adb_devices
+        if device.status == DeviceStatus.UNAUTHORIZED and device.ip
+    }
 
     def add(device: DiscoveredDevice) -> None:
         key = (bool(device.ip), device.id)
@@ -220,17 +298,18 @@ def merge_discovered_devices(
         if previous is None:
             merged[key] = device
             return
-        winner, other = (device, previous) if merge_rank(device) < merge_rank(previous) else (previous, device)
+        winner, other = (device, previous) if priority[device.status] < priority[previous.status] else (previous, device)
         merged[key] = replace(winner, pairing_port=winner.pairing_port or other.pairing_port)
 
-    for device in usb_devices:
-        add(_adb_device(device))
+    for device in adb_devices:
+        add(device)
     for record in mdns_records:
         device = _mdns_device(record)
-        if device is not None:
+        if device is not None and (device.ip, device.port) not in unauthorized_endpoints:
             add(device)
     for ip in open_5555_ips:
-        add(DiscoveredDevice(ip, ip, ip, _ADB_PORT, None, DeviceStatus.READY, "scan", None))
+        if (ip, _ADB_PORT) not in unauthorized_endpoints:
+            add(DiscoveredDevice(ip, ip, ip, _ADB_PORT, None, DeviceStatus.READY, "scan", None))
     return sorted(merged.values(), key=lambda device: priority[device.status])
 
 
