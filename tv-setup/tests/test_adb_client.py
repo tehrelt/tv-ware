@@ -93,6 +93,41 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(list(self.tools.iterdir()), [])
             self.assertEqual(download_platform_tools(self.tools).read_bytes(), b"adb")
 
+    def test_download_replaces_existing_incomplete_platform_tools(self):
+        installed = self.tools / "platform-tools"
+        installed.mkdir(parents=True)
+        (installed / "leftover.dll").write_bytes(b"old")
+        response = io.BytesIO(make_zip(("platform-tools/adb.exe", b"new")))
+        response.headers = {}
+        with patch("urllib.request.urlopen", return_value=response):
+            self.assertEqual(download_platform_tools(self.tools), installed / "adb.exe")
+        self.assertEqual((installed / "adb.exe").read_bytes(), b"new")
+        self.assertFalse((installed / "leftover.dll").exists())
+        self.assertEqual(list(self.tools.iterdir()), [installed])
+
+    def test_failed_publication_restores_existing_platform_tools(self):
+        installed = self.tools / "platform-tools"
+        installed.mkdir(parents=True)
+        leftover = installed / "leftover.dll"
+        leftover.write_bytes(b"old")
+        response = io.BytesIO(make_zip(("platform-tools/adb.exe", b"new")))
+        response.headers = {}
+        replace = Path.replace
+
+        def fail_staging_replace(source, target):
+            if target == installed and (source / "adb.exe").is_file():
+                self.assertFalse(installed.exists())
+                raise PermissionError("publish denied")
+            return replace(source, target)
+
+        with patch("urllib.request.urlopen", return_value=response), patch.object(
+            Path, "replace", fail_staging_replace,
+        ):
+            with self.assertRaisesRegex(PermissionError, "publish denied"):
+                download_platform_tools(self.tools)
+        self.assertEqual(leftover.read_bytes(), b"old")
+        self.assertEqual(list(self.tools.iterdir()), [installed])
+
     def test_download_reports_progress_and_removes_partial_archive(self):
         data = make_zip(("platform-tools/", b""), ("platform-tools/adb.exe", b"adb"))
         response = io.BytesIO(data)

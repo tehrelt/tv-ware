@@ -85,6 +85,31 @@ def safe_extract_zip(zip_path: Path, dest_dir: Path) -> None:
         raise ValueError(f"Corrupt ZIP archive: {exc}") from exc
 
 
+def _publish_platform_tools(staged: Path, installed: Path) -> None:
+    if not os.path.lexists(installed):
+        staged.replace(installed)
+        return
+
+    backup_dir = Path(tempfile.mkdtemp(dir=installed.parent, prefix=".platform-tools-backup-"))
+    backup = backup_dir / installed.name
+    try:
+        installed.replace(backup)
+    except OSError:
+        backup_dir.rmdir()
+        raise
+
+    try:
+        staged.replace(installed)
+    except OSError:
+        try:
+            backup.replace(installed)
+        except OSError as exc:
+            raise AdbError(f"Could not restore platform-tools; backup retained at {backup}") from exc
+        backup_dir.rmdir()
+        raise
+    shutil.rmtree(backup_dir)
+
+
 def download_platform_tools(
     tools_dir: Path,
     progress_cb: Callable[[int, int], None] | None = None,
@@ -108,7 +133,7 @@ def download_platform_tools(
             staged_adb = staging / _ADB_RELATIVE_PATH
             if not staged_adb.is_file():
                 raise AdbError("platform-tools archive did not provide adb.exe")
-            staged_adb.parent.replace(tools_dir / _ADB_RELATIVE_PATH.parent)
+            _publish_platform_tools(staged_adb.parent, tools_dir / _ADB_RELATIVE_PATH.parent)
         return tools_dir / _ADB_RELATIVE_PATH
     finally:
         archive_path.unlink(missing_ok=True)
