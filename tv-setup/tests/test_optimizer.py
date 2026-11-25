@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 from tv_setup.adb_client import AdbError, AdbResult
 from tv_setup.optimizer import ApplyPlan, DeviceInspection, apply_optimizations, inspect_device, rollback_device
@@ -452,6 +453,38 @@ class OptimizerTests(unittest.TestCase):
                         self.assertEqual(data["disabled_packages"], {ADS: "disable"})
                     else:
                         self.assertEqual(data["pending_package"], {"package": ADS, "method": "disable"})
+
+    def test_pending_rollback_restores_and_checks_inventory_without_boot_id(self):
+        self.apply(FakeAdb(), ApplyPlan(False, False, False, False, []))
+        original = self.read_snapshot()
+        enable = f"pm enable {ADS}"
+        install = f"cmd package install-existing {ADS}"
+        for method, boot, fence, restore in (
+            ("uninstall", AdbResult(1, "", "Permission denied"), {}, [install, enable]),
+            ("disable", output("malformed"), {"recovery_boot_id": BOOT_A}, [enable]),
+        ):
+            with self.subTest(method=method):
+                data = {**original, **fence, "pending_package": {"package": ADS, "method": method}}
+                self.snapshot.write_text(json.dumps(data), encoding="utf-8")
+                adb = FakeAdb({BOOT: boot, "getprop ro.serialno": output("SER123"),
+                               "pm list packages": output(f"package:{ADS}")})
+                report = rollback_device(adb, SERIAL, self.state)
+                self.assertTrue(any("Cannot establish package recovery boot" in e for e in report.errors))
+                checks = ["pm list packages", "pm list packages -d"]
+                self.assertEqual([c for c in adb.commands if c in [install, enable, *checks]], restore + checks)
+                self.assertEqual(self.read_snapshot(), data)
+
+    def test_pending_rollback_restores_when_recovery_boot_save_fails(self):
+        self.apply(FakeAdb(), ApplyPlan(False, False, False, False, []))
+        data = {**self.read_snapshot(), "pending_package": {"package": ADS, "method": "disable"}}
+        self.snapshot.write_text(json.dumps(data), encoding="utf-8")
+        adb = FakeAdb({"getprop ro.serialno": output("SER123"), "pm list packages": output(f"package:{ADS}")})
+        with patch("tv_setup.optimizer._save_snapshot", side_effect=OSError("disk full")):
+            report = rollback_device(adb, SERIAL, self.state)
+        self.assertTrue(any("Cannot establish package recovery boot" in e for e in report.errors))
+        expected = [f"pm enable {ADS}", "pm list packages", "pm list packages -d"]
+        self.assertEqual([c for c in adb.commands if c in expected], expected)
+        self.assertEqual(self.read_snapshot(), data)
 
     def test_pending_restore_verifies_inventory_and_retains_retry_record(self):
         for method in ("disable", "uninstall"):

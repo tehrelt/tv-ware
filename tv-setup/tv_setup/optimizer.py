@@ -358,11 +358,12 @@ def _recover_pending(adb: AdbClient, serial: str, path: Path, snapshot: dict, re
         if not _matches(_BOOT_ID, boot):
             raise AdbError("cannot identify current device boot")
         if "recovery_boot_id" not in snapshot:
-            snapshot = {**snapshot, "recovery_boot_id": boot}
-            _save_snapshot(path, snapshot)
+            updated = {**snapshot, "recovery_boot_id": boot}
+            _save_snapshot(path, updated)
+            snapshot = updated
     except (AdbError, OSError) as exc:
         _record(report.errors, f"Cannot establish package recovery boot: {exc}", log_cb)
-        return snapshot
+        boot = None
     if method == "uninstall" and not _run(adb, serial, _restore_package(pkg, method), report, log_cb):
         return snapshot
     if not _run(adb, serial, _restore_package(pkg, "disable"), report, log_cb):
@@ -372,6 +373,8 @@ def _recover_pending(adb: AdbClient, serial: str, path: Path, snapshot: dict, re
         disabled = _package_changed(adb, serial, pkg, "disable")
         if missing or disabled:
             raise AdbError(f"{pkg} is still missing or disabled")
+        if boot is None:
+            return snapshot
         if boot == snapshot["recovery_boot_id"]:
             raise AdbError(f"{pkg} may still change; reboot the TV and retry rollback")
         return _finish_package(path, snapshot, True)
