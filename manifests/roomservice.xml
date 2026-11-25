@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <project path="device/xiaomi/jaws" remote="github" name="LineageOS/android_device_xiaomi_jaws" />
+  <project path="device/amlogic/ne-common" remote="github" name="LineageOS/android_device_amlogic_ne-common" />
+  <project path="hardware/xiaomi" remote="github" name="LineageOS/android_hardware_xiaomi" />
+  <project path="kernel/platform/kernel-5.15/vendor/amlogic/bt-modules" remote="github" name="LineageOS/android_kernel_amlogic_bt-modules" />
+  <project path="kernel/platform/kernel-5.15/vendor/amlogic/mtk-drivers/mt7663u" remote="github" name="LineageOS/android_kernel_amlogic_mtk-drivers_mt7663u" />
+  <project path="kernel/platform/kernel-5.15/vendor/xiaomi/jaws-build" remote="github" name="LineageOS/android_kernel_xiaomi_jaws-build" />
+  <project path="device/amlogic/common" remote="github" name="LineageOS/android_device_amlogic_common" />
+  <include name="manifests/snippets/kernel-5.15.xml" />
+  <project path="kernel/platform/kernel-5.15/vendor/amlogic/kernel" remote="github" name="LineageOS/android_kernel_amlogic_kernel-5.15" />
+  <project path="kernel/platform/kernel-5.15/vendor/amlogic/common_drivers" remote="github" name="LineageOS/android_kernel_amlogic_common_drivers" />
+  <project path="kernel/platform/kernel-5.15/vendor/amlogic/gpu-modules" remote="github" name="LineageOS/android_kernel_amlogic_gpu-modules" />
+  <project path="kernel/platform/kernel-5.15/vendor/amlogic/media-modules" remote="github" name="LineageOS/android_kernel_amlogic_media-modules" />
+  <project path="device/amlogic/sepolicy" remote="github" name="LineageOS/android_device_amlogic_sepolicy" />
+  <project path="hardware/amlogic/tools/dtbtool" remote="github" name="LineageOS/android_hardware_amlogic_tools_dtbtool" />
+  <project path="hardware/amlogic/tools/imagepacker" remote="github" name="LineageOS/android_hardware_amlogic_tools_imagepacker" />
+  <project path="hardware/amlogic/tools/respacker" remote="github" name="LineageOS/android_hardware_amlogic_tools_respacker" />
+</manifest>

@@ -1,0 +1,100 @@
+soong_namespace {}
+
+android_app_import {
+    name: "Happ",
+    apk: "prebuilt/Happ/Happ.apk",
+    presigned: true,
+    preprocessed: true,
+    skip_preprocessed_apk_checks: true,
+    enforce_uses_libs: false,
+    product_specific: true,
+    overrides: [
+        "HTMLViewer",
+        "BasicDreams",
+        "ExactCalculator",
+        "Jelly",
+        "Browser2",
+    ],
+}
+
+prebuilt_etc {
+    name: "happ-sysconfig.xml",
+    src: "sysconfig/happ-sysconfig.xml",
+    sub_dir: "sysconfig",
+    product_specific: true,
+}
+
+soong_config_module_type {
+    name: "custom_apk_import",
+    module_type: "android_app_import",
+    config_namespace: "custom_apks",
+    bool_variables: [
+        "has_youtubetv",
+        "youtubetv_skip_checks",
+        "has_spotifytv",
+        "spotifytv_skip_checks",
+        "has_customlauncher",
+        "customlauncher_skip_checks",
+        "replace_launcher",
+    ],
+    properties: [
+        "apk",
+        "skip_preprocessed_apk_checks",
+        "overrides",
+    ],
+}
+
+custom_apk_import {
+    name: "YouTubeTV",
+    presigned: true,
+    preprocessed: true,
+    enforce_uses_libs: false,
+    product_specific: true,
+    soong_config_variables: {
+        has_youtubetv: {
+            apk: "apks/YouTubeTV.apk",
+        },
+        youtubetv_skip_checks: {
+            skip_preprocessed_apk_checks: true,
+        },
+    },
+}
+
+custom_apk_import {
+    name: "SpotifyTV",
+    presigned: true,
+    preprocessed: true,
+    enforce_uses_libs: false,
+    product_specific: true,
+    soong_config_variables: {
+        has_spotifytv: {
+            apk: "apks/SpotifyTV.apk",
+        },
+        spotifytv_skip_checks: {
+            skip_preprocessed_apk_checks: true,
+        },
+    },
+}
+
+custom_apk_import {
+    name: "CustomLauncher",
+    presigned: true,
+    preprocessed: true,
+    enforce_uses_libs: false,
+    product_specific: true,
+    soong_config_variables: {
+        has_customlauncher: {
+            apk: "apks/CustomLauncher.apk",
+        },
+        customlauncher_skip_checks: {
+            skip_preprocessed_apk_checks: true,
+        },
+        replace_launcher: {
+            overrides: [
+                "Catapult",
+                "TvLauncherNoGMS",
+                "TvSampleLeanbackLauncher",
+            ],
+        },
+    },
+}

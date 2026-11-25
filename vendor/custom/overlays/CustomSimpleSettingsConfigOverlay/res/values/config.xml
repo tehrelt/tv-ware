@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="configs_first_boot_device">
+        <item>global/window_animation_scale=0.25</item>
+        <item>global/transition_animation_scale=0.25</item>
+        <item>global/animator_duration_scale=0.25</item>
+    </string-array>
+</resources>

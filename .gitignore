@@ -1,0 +1,15 @@
+.claude/
+.gradle/
+.kotlin/
+tv-launcher/build/
+tv-launcher/*/build/
+local.properties
+keystore.properties
+*.jks
+*.keystore
+*.apk
+*.aab
+*.img
+*.zip
+.DS_Store
+Thumbs.db

@@ -1,0 +1,11 @@
+diff --git a/lineage_jaws.mk b/lineage_jaws.mk
+index d13c19c..a3fc399 100644
+--- a/lineage_jaws.mk
++++ b/lineage_jaws.mk
+@@ -28,3 +28,6 @@ PRODUCT_BUILD_PROP_OVERRIDES += \
+     BuildFingerprint=Xiaomi/jaws/jaws:14/UKG3.250107.001/V816.0.26.4.17.UZFAABX:user/release-keys \
+     DeviceProduct=jaws \
+     SystemName=jaws
++
++# Isolated custom layer
++$(call inherit-product-if-exists, vendor/custom/custom.mk)
