@@ -30,6 +30,11 @@ def make_zip(*entries):
     return buffer.getvalue()
 
 
+def make_bad_crc_zip():
+    data = make_zip(("platform-tools/adb.exe", b"adb"), ("platform-tools/AdbWinApi.dll", b"original DLL data"))
+    return data.replace(b"original DLL data", b"modified DLL data")
+
+
 class BootstrapTests(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
@@ -68,6 +73,25 @@ class BootstrapTests(unittest.TestCase):
                     safe_extract_zip(archive, dest)
                 self.assertFalse((self.root / "evil.txt").exists())
                 self.assertFalse((dest / "first.txt").exists())
+
+    def test_safe_extract_zip_reports_corruption_as_value_error(self):
+        archive = self.root / "corrupt.zip"
+        for data in (b"not a ZIP", make_bad_crc_zip()):
+            with self.subTest(data=data[:10]):
+                archive.write_bytes(data)
+                with self.assertRaisesRegex(ValueError, "Corrupt ZIP"):
+                    safe_extract_zip(archive, self.root / "out")
+
+    def test_failed_extraction_does_not_publish_adb_and_allows_retry(self):
+        corrupt = io.BytesIO(make_bad_crc_zip())
+        valid = io.BytesIO(make_zip(("platform-tools/adb.exe", b"adb")))
+        corrupt.headers = valid.headers = {}
+        with patch("urllib.request.urlopen", side_effect=[corrupt, valid]):
+            with self.assertRaises(ValueError):
+                download_platform_tools(self.tools)
+            self.assertFalse((self.tools / "platform-tools" / "adb.exe").exists())
+            self.assertEqual(list(self.tools.iterdir()), [])
+            self.assertEqual(download_platform_tools(self.tools).read_bytes(), b"adb")
 
     def test_download_reports_progress_and_removes_partial_archive(self):
         data = make_zip(("platform-tools/", b""), ("platform-tools/adb.exe", b"adb"))

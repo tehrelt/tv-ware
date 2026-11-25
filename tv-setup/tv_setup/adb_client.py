@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import urllib.request
 import zipfile
+import zlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
@@ -60,25 +61,28 @@ def find_adb_executable(
 
 def safe_extract_zip(zip_path: Path, dest_dir: Path) -> None:
     root = dest_dir.resolve()
-    with zipfile.ZipFile(zip_path) as archive:
-        for member in archive.infolist():
-            name = member.orig_filename
-            path = PureWindowsPath(name)
-            if (
-                not path.parts
-                or path.anchor
-                or ".." in path.parts
-                or any(
-                    PureWindowsPath(part).is_reserved()
-                    or part.endswith((".", " "))
-                    or any(char in ':<>|"?*' or ord(char) < 32 for char in part)
-                    for part in path.parts
-                )
-                or stat.S_ISLNK(member.external_attr >> 16)
-                or not (root.joinpath(*path.parts)).resolve().is_relative_to(root)
-            ):
-                raise ValueError(f"Unsafe ZIP member: {name!r}")
-        archive.extractall(root)
+    try:
+        with zipfile.ZipFile(zip_path) as archive:
+            for member in archive.infolist():
+                name = member.orig_filename
+                path = PureWindowsPath(name)
+                if (
+                    not path.parts
+                    or path.anchor
+                    or ".." in path.parts
+                    or any(
+                        PureWindowsPath(part).is_reserved()
+                        or part.endswith((".", " "))
+                        or any(char in ':<>|"?*' or ord(char) < 32 for char in part)
+                        for part in path.parts
+                    )
+                    or stat.S_ISLNK(member.external_attr >> 16)
+                    or not root.joinpath(*path.parts).resolve().is_relative_to(root)
+                ):
+                    raise ValueError(f"Unsafe ZIP member: {name!r}")
+            archive.extractall(root)
+    except (zipfile.BadZipFile, zlib.error, EOFError) as exc:
+        raise ValueError(f"Corrupt ZIP archive: {exc}") from exc
 
 
 def download_platform_tools(
@@ -98,11 +102,14 @@ def download_platform_tools(
                 downloaded += len(chunk)
                 if progress_cb is not None:
                     progress_cb(downloaded, total)
-        safe_extract_zip(archive_path, tools_dir)
-        adb_path = tools_dir / _ADB_RELATIVE_PATH
-        if not adb_path.is_file():
-            raise AdbError("platform-tools archive did not provide adb.exe")
-        return adb_path
+        with tempfile.TemporaryDirectory(dir=tools_dir) as staging_dir:
+            staging = Path(staging_dir)
+            safe_extract_zip(archive_path, staging)
+            staged_adb = staging / _ADB_RELATIVE_PATH
+            if not staged_adb.is_file():
+                raise AdbError("platform-tools archive did not provide adb.exe")
+            staged_adb.parent.replace(tools_dir / _ADB_RELATIVE_PATH.parent)
+        return tools_dir / _ADB_RELATIVE_PATH
     finally:
         archive_path.unlink(missing_ok=True)
 
