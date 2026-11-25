@@ -1,5 +1,4 @@
 .claude/
-.superpowers/
 __pycache__/
 *.pyc
 tv-setup/.venv/

@@ -6,6 +6,10 @@ on:
     paths: ['tv-launcher/**']
   workflow_dispatch:
 
+concurrency:
+  group: release-launcher
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
@@ -32,6 +36,9 @@ jobs:
             umask 077
             printf '%s' "$KEYSTORE_BASE64" | base64 --decode > release.jks
             printf '%s' "$KEYSTORE_PROPERTIES" | base64 --decode > keystore.properties
+          elif [[ -n "$KEYSTORE_BASE64" || -n "$KEYSTORE_PROPERTIES" ]]; then
+            printf '%s\n' 'Release signing requires both KEYSTORE_BASE64 and KEYSTORE_PROPERTIES, or neither.' >&2
+            exit 1
           fi
       - name: Build launcher APK
         working-directory: tv-launcher
