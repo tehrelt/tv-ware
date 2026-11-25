@@ -31,6 +31,8 @@ class FakeAdb:
 
     def shell(self, serial, command, timeout=15.0):
         self.commands.append(command)
+        if command == "pm list packages -d" and command not in self.responses:
+            return output("")
         for prefix, result in self.responses.items():
             if command.startswith(prefix):
                 if isinstance(result, AdbError):
@@ -175,17 +177,17 @@ class OptimizerTests(unittest.TestCase):
         self.assertIn("settings put global window_animation_scale 1.0", adb.commands)
 
     def test_zero_exit_failure_markers_trigger_fallback_and_no_false_success(self):
-        for marker in ("SecurityException", "Failure", "Error", "Exception"):
+        for marker in ("SecurityException", "Failure", "Unknown package:", "DELETE_FAILED_INTERNAL_ERROR"):
             with self.subTest(marker=marker):
                 adb = FakeAdb({DISABLE + ADS: output(marker), UNINSTALL + ADS: AdbResult(0, "", marker),
                                "pm list packages -d": output(""), "pm list packages": output(f"package:{ADS}")})
                 report = self.apply(adb, ApplyPlan(False, False, False, False, [ADS]))
-                self.assertEqual(adb.commands, [DISABLE + ADS, UNINSTALL + ADS])
+                self.assertEqual(adb.commands, [DISABLE + ADS, "pm list packages -d", UNINSTALL + ADS, "pm list packages"])
                 self.assertTrue(report.errors)
                 self.assertEqual(self.read_snapshot()["disabled_packages"], {})
 
     def test_adb_error_is_reported_and_other_changes_continue(self):
-        adb = FakeAdb({DISABLE + ADS: output("Failure"), UNINSTALL + ADS: output("Error: offline"),
+        adb = FakeAdb({DISABLE + ADS: output("Failure"), UNINSTALL + ADS: output("Failure [DELETE_FAILED_INTERNAL_ERROR: offline]"),
                        "pm list packages -d": output(""), "pm list packages": output(f"package:{ADS}")})
         report = self.apply(adb, ApplyPlan(False, False, False, False, [ADS, GAMES]))
         self.assertTrue(any("offline" in error for error in report.errors))
@@ -289,9 +291,9 @@ class OptimizerTests(unittest.TestCase):
         self.assertFalse(any("preferred-activities" in cmd or cmd.startswith(SET_HOME) for cmd in adb.commands))
 
     def test_interrupted_package_mutation_is_recoverable(self):
-        for method, mutation, query, listing, restore in (
-            ("disable", DISABLE, "pm list packages -d", f"package:{ADS}", f"pm enable {ADS}"),
-            ("uninstall", UNINSTALL, "pm list packages", "", f"cmd package install-existing {ADS}"),
+        for method, mutation, restore in (
+            ("disable", DISABLE, f"pm enable {ADS}"),
+            ("uninstall", UNINSTALL, f"cmd package install-existing {ADS}"),
         ):
             with self.subTest(method=method):
                 class InterruptedAdb(FakeAdb):
@@ -304,7 +306,7 @@ class OptimizerTests(unittest.TestCase):
                 adb = InterruptedAdb({DISABLE + ADS: output("Failure")})
                 with self.assertRaises(KeyboardInterrupt):
                     self.apply(adb, ApplyPlan(False, False, False, False, [ADS]))
-                adb = FakeAdb({"getprop ro.serialno": output("SER123"), query: output(listing)})
+                adb = FakeAdb({"getprop ro.serialno": output("SER123"), "pm list packages": output(f"package:{ADS}")})
                 self.assertFalse(rollback_device(adb, SERIAL, self.state).errors)
                 self.assertIn(restore, adb.commands)
                 self.assertNotIn("pending_package", self.read_snapshot())
@@ -362,7 +364,7 @@ class OptimizerTests(unittest.TestCase):
                 retry = FakeAdb()
                 self.assertTrue(self.apply(retry, ApplyPlan(True, False, False, False, [ADS])).errors)
                 self.assertEqual(retry.commands, [])
-                recovery = FakeAdb({"getprop ro.serialno": output("SER123")})
+                recovery = FakeAdb({"getprop ro.serialno": output("SER123"), "pm list packages": output(f"package:{ADS}")})
                 self.assertFalse(rollback_device(recovery, SERIAL, self.state).errors)
 
     def test_rollback_restores_pending_even_before_change_is_visible(self):
@@ -374,7 +376,7 @@ class OptimizerTests(unittest.TestCase):
             with self.subTest(method=method):
                 data = {**self.read_snapshot(), "pending_package": {"package": ADS, "method": method}}
                 self.snapshot.write_text(json.dumps(data), encoding="utf-8")
-                responses = {"getprop ro.serialno": output("SER123"), **inventory}
+                responses = {"getprop ro.serialno": output("SER123"), "pm list packages": output(f"package:{ADS}"), **inventory}
                 adb = FakeAdb({**responses, enable: output("Error: cannot enable")})
                 self.assertTrue(rollback_device(adb, SERIAL, self.state).errors)
                 self.assertIn("pending_package", self.read_snapshot())
@@ -385,6 +387,10 @@ class OptimizerTests(unittest.TestCase):
 
     def test_legacy_snapshot_blocks_apply_and_rollback(self):
         self.state.mkdir()
+        self.assert_legacy_snapshot_blocks_apply_and_rollback()
+
+    def assert_legacy_snapshot_blocks_apply_and_rollback(self):
+        existing = set(self.state.glob("*.json"))
         legacy = self.state / "SER123.json"
         legacy.write_text("{}", encoding="utf-8")
         adb = FakeAdb({"getprop ro.serialno": output("SER123")})
@@ -392,4 +398,58 @@ class OptimizerTests(unittest.TestCase):
                        rollback_device(adb, SERIAL, self.state)):
             self.assertTrue(any(str(legacy) in error and "legacy" in error.lower() for error in report.errors))
         self.assertEqual(adb.commands, ["getprop ro.serialno"])
-        self.assertEqual(list(self.state.glob("*.json")), [legacy])
+        self.assertEqual(set(self.state.glob("*.json")), existing | {legacy})
+
+    def test_chooser_home_cannot_be_switched_or_restored(self):
+        chooser = "android/com.android.internal.app.ResolverActivity"
+        adb = FakeAdb({"getprop ro.serialno": output("SER123")})
+        info = replace(self.info, home_component=chooser)
+        self.assertTrue(self.apply(adb, ApplyPlan(False, False, True, True, []), info).errors)
+        self.assertEqual(adb.commands, [])
+        self.assertTrue(rollback_device(adb, SERIAL, self.state).errors)
+        self.assertFalse(any(cmd.startswith(SET_HOME) for cmd in adb.commands))
+
+    def test_coexisting_legacy_snapshot_blocks_apply_and_rollback(self):
+        self.assertFalse(self.apply(FakeAdb(), ApplyPlan(False, False, False, False, [])).errors)
+        self.assert_legacy_snapshot_blocks_apply_and_rollback()
+
+    def test_generic_errors_reconcile_before_any_uninstall(self):
+        for message in ("Error: command interrupted", "java.lang.RuntimeException: interrupted", "Failure"):
+            for visible in (True, False):
+                if not visible and message == "Failure":
+                    continue
+                with self.subTest(message=message, visible=visible):
+                    self.snapshot.unlink(missing_ok=True)
+                    adb = FakeAdb({DISABLE + ADS: output(message),
+                                   "pm list packages -d": output(f"package:{ADS}" if visible else "")})
+                    report = self.apply(adb, ApplyPlan(False, False, False, False, [ADS]))
+                    self.assertEqual(adb.commands, [DISABLE + ADS, "pm list packages -d"])
+                    self.assertEqual(bool(report.errors), not visible)
+                    data = self.read_snapshot()
+                    if visible:
+                        self.assertEqual(data["disabled_packages"], {ADS: "disable"})
+                    else:
+                        self.assertEqual(data["pending_package"], {"package": ADS, "method": "disable"})
+
+    def test_pending_restore_verifies_inventory_and_retains_retry_record(self):
+        for method in ("disable", "uninstall"):
+            with self.subTest(method=method):
+                self.snapshot.unlink(missing_ok=True)
+                self.apply(FakeAdb(), ApplyPlan(False, False, False, False, []))
+                data = {**self.read_snapshot(), "pending_package": {"package": ADS, "method": method}}
+                self.snapshot.write_text(json.dumps(data), encoding="utf-8")
+                responses = {"getprop ro.serialno": output("SER123")}
+                if method == "disable":
+                    responses.update({"pm list packages -d": output(f"package:{ADS}"),
+                                      "pm list packages": output(f"package:{ADS}")})
+                self.assertTrue(rollback_device(FakeAdb(responses), SERIAL, self.state).errors)
+                self.assertIn("pending_package", self.read_snapshot())
+                active = FakeAdb({"getprop ro.serialno": output("SER123"),
+                                  "pm list packages": output(f"package:{ADS}")})
+                self.assertFalse(rollback_device(active, SERIAL, self.state).errors)
+                self.assertNotIn("pending_package", self.read_snapshot())
+                self.assertEqual(self.read_snapshot()["disabled_packages"], {ADS: method})
+                late = FakeAdb(responses)
+                self.assertFalse(rollback_device(late, SERIAL, self.state).errors)
+                restore = "pm enable " if method == "disable" else "cmd package install-existing "
+                self.assertIn(restore + ADS, late.commands)

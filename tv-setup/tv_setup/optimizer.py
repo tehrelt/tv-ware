@@ -22,9 +22,12 @@ from .presets import (
 _PACKAGE = r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*"
 _COMPONENT = rf"{_PACKAGE}/\.?[A-Za-z_$][A-Za-z0-9_.$]*"
 _SCALE = r"(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?|null"
+_REJECTION = re.compile(
+    r"^\s*(?:(?:java\.lang\.)?SecurityException\b|Failure\b|Unknown package:|DELETE_FAILED_|INSTALL_FAILED_)",
+    re.IGNORECASE | re.MULTILINE,
+)
 _FAILURE = re.compile(
-    r"^\s*(?:(?:SecurityException|Failure|Exception)\b|Error(?:\s*:|\s*$)|"
-    r"java\.lang\.\w*Exception\b|Unknown package:|DELETE_FAILED_|INSTALL_FAILED_)",
+    r"^\s*(?:Exception\b|Error(?:\s*:|\s*$)|java\.lang\.\w*Exception\b)",
     re.IGNORECASE | re.MULTILINE,
 )
 _TRANSPORT_FAILURE = re.compile(
@@ -139,19 +142,15 @@ def _validate_snapshot(snapshot: dict, device_id: str) -> dict:
 
 
 def _load_snapshot(path: Path, device_id: str) -> dict:
-    try:
-        text = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        legacy = path.with_name(f"{_safe_id(device_id)}.json")
-        if legacy != path:
-            try:
-                legacy.lstat()
-            except FileNotFoundError:
-                pass
-            else:
-                raise ValueError(f"Cannot verify identity of legacy snapshot: {legacy}") from None
-        raise
-    return _validate_snapshot(json.loads(text), device_id)
+    legacy = path.with_name(f"{_safe_id(device_id)}.json")
+    if legacy != path:
+        try:
+            legacy.lstat()
+        except FileNotFoundError:
+            pass
+        else:
+            raise ValueError(f"Cannot verify identity of legacy snapshot: {legacy}")
+    return _validate_snapshot(json.loads(path.read_text(encoding="utf-8")), device_id)
 
 
 def _save_snapshot(path: Path, snapshot: dict) -> None:
@@ -177,9 +176,9 @@ def _command(adb: AdbClient, serial: str, command: str) -> str:
     output = f"{result.stdout}\n{result.stderr}".strip()
     if _TRANSPORT_FAILURE.search(result.stderr):
         raise AdbError(f"{command}: {output}")
-    if _FAILURE.search(output):
+    if _REJECTION.search(output):
         raise _CommandRejected(f"{command}: {output}")
-    if result.returncode:
+    if result.returncode or _FAILURE.search(output):
         raise AdbError(f"{command}: {output or result.returncode}")
     return result.stdout.strip()
 
@@ -243,6 +242,13 @@ def _home_package(component: str | None) -> str:
     return (component or "").partition("/")[0]
 
 
+def _is_restorable_home(component: str | None) -> bool:
+    if component is None:
+        return False
+    package, _, activity = component.partition("/")
+    return package != "android" and activity.rsplit(".", 1)[-1] != "ResolverActivity"
+
+
 def _stock_package(snapshot: dict, inspection: DeviceInspection) -> str | None:
     original = _home_package(snapshot["home_component"])
     candidates = inspection.installed_packages.intersection(STOCK_LAUNCHER_PACKAGES)
@@ -256,8 +262,8 @@ def _apply_launcher(
     snapshot: dict, inspection: DeviceInspection, plan: ApplyPlan, run: Callable[[str], bool],
     disable: Callable[[str], None], report: ApplyReport, log_cb: Callable[[str], None] | None,
 ) -> None:
-    if snapshot["home_component"] is None:
-        _record(report.errors, "Cannot change launchers: original HOME is unknown", log_cb)
+    if not _is_restorable_home(snapshot["home_component"]):
+        _record(report.errors, "Cannot change launchers: original HOME is unrestorable", log_cb)
         return
     if LAUNCHER_PACKAGE not in inspection.installed_packages:
         _record(report.errors, f"Cannot change launchers: {LAUNCHER_PACKAGE} is not installed", log_cb)
@@ -321,13 +327,12 @@ def _disable_package(
             try:
                 _command(adb, serial, command)
                 changed = True
-            except _CommandRejected as exc:
-                errors.append(str(exc))
-                changed = False
             except AdbError as exc:
                 changed = _package_changed(adb, serial, pkg, method)
                 if not changed:
-                    raise AdbError(f"{exc}; package may still change, rollback required") from exc
+                    if not isinstance(exc, _CommandRejected):
+                        raise AdbError(f"{exc}; package may still change, rollback required") from exc
+                    errors.append(str(exc))
             snapshot = _finish_package(path, snapshot, changed)
         except (AdbError, OSError) as exc:
             _record(report.errors, f"Cannot complete {method} for {pkg}: {exc}", log_cb)
@@ -347,14 +352,15 @@ def _recover_pending(adb: AdbClient, serial: str, path: Path, snapshot: dict, re
         return snapshot
     if not _run(adb, serial, _restore_package(pkg, "disable"), report, log_cb):
         return snapshot
-    updated = {key: value for key, value in snapshot.items() if key != "pending_package"}
-    updated["disabled_packages"] = {key: value for key, value in snapshot["disabled_packages"].items() if key != pkg}
     try:
-        _save_snapshot(path, updated)
-    except OSError as exc:
-        _record(report.errors, f"Cannot clear pending package: {exc}", log_cb)
+        missing = _package_changed(adb, serial, pkg, "uninstall")
+        disabled = _package_changed(adb, serial, pkg, "disable")
+        if missing or disabled:
+            raise AdbError(f"{pkg} is still missing or disabled")
+        return _finish_package(path, snapshot, True)
+    except (AdbError, OSError) as exc:
+        _record(report.errors, f"Cannot verify or record recovery: {exc}", log_cb)
         return snapshot
-    return updated
 
 
 def rollback_device(
@@ -369,16 +375,17 @@ def rollback_device(
         _record(report.errors, f"Cannot load rollback snapshot: {exc}", log_cb)
         return report
 
-    if snapshot.get("pending_package"):
-        snapshot = _recover_pending(adb, serial, path, snapshot, report, log_cb)
     pending = snapshot.get("pending_package", {})
+    if pending:
+        snapshot = _recover_pending(adb, serial, path, snapshot, report, log_cb)
     for pkg, method in snapshot["disabled_packages"].items():
         if pkg != pending.get("package"):
             _run(adb, serial, _restore_package(pkg, method), report, log_cb)
-    if home := snapshot["home_component"]:
+    home = snapshot["home_component"]
+    if home is not None and _is_restorable_home(home):
         _run(adb, serial, f"{_SET_HOME} {shlex.quote(home)}", report, log_cb)
-    elif snapshot.get("home_switched"):
-        _record(report.errors, "Cannot roll back launcher: original HOME is unknown", log_cb)
+    elif home is not None or snapshot.get("home_switched"):
+        _record(report.errors, "Cannot roll back launcher: original HOME is unrestorable", log_cb)
     for key, value in snapshot["animation_scales"].items():
         command = f"settings delete global {key}" if value == "null" else f"settings put global {key} {value}"
         _run(adb, serial, command, report, log_cb)
