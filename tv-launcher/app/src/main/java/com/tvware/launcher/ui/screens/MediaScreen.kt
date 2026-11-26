@@ -8,14 +8,18 @@ import android.os.SystemClock
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -739,7 +743,7 @@ private fun MediaLyricsPanel(
                 if (abs(delta) > 1f) {
                     listState.animateScrollBy(
                         value = delta,
-                        animationSpec = tween(durationMillis = 380, easing = FastOutSlowInEasing),
+                        animationSpec = spring(dampingRatio = 0.92f, stiffness = 160f),
                     )
                 }
             }
@@ -793,7 +797,7 @@ private fun MediaLyricsPanel(
                 }
                 val scale by animateFloatAsState(
                     targetValue = targetScale,
-                    animationSpec = tween(durationMillis = 380, easing = FastOutSlowInEasing),
+                    animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing),
                     label = "lyricScale",
                 )
 
@@ -807,20 +811,22 @@ private fun MediaLyricsPanel(
                 }
                 val lineAlpha by animateFloatAsState(
                     targetValue = targetAlpha,
-                    animationSpec = tween(
-                        durationMillis = if (distance >= 3) 180 else 380,
-                        easing = FastOutSlowInEasing,
-                    ),
+                    animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing),
                     label = "lyricAlpha",
                 )
 
-                val lineBlur = when {
+                val targetBlur = when {
                     !isSynced -> 0.dp
                     isActive -> 0.dp
                     distance == 0 -> 1.dp
                     distance == 1 -> 2.5.dp
                     else -> 5.dp
                 }
+                val lineBlur by animateDpAsState(
+                    targetValue = targetBlur,
+                    animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing),
+                    label = "lyricBlur",
+                )
 
                 val lineModifier = Modifier
                     .fillMaxWidth()
@@ -840,9 +846,18 @@ private fun MediaLyricsPanel(
                     .padding(horizontal = 16.dp, vertical = 8.dp)
 
                 val gap = idleGap
-                if (gap != null && gap.first == index) {
-                    val gapProgress = ((currentPosMs - gap.second).toFloat() /
-                        (gap.third - gap.second).coerceAtLeast(1L).toFloat()).coerceIn(0f, 1f)
+                val showGap = gap != null && gap.first == index
+                AnimatedVisibility(
+                    visible = showGap,
+                    enter = fadeIn(tween(300)) + expandVertically(tween(300)),
+                    exit = fadeOut(tween(250)) + shrinkVertically(tween(250)),
+                ) {
+                    val gapProgress = if (gap != null && gap.first == index) {
+                        ((currentPosMs - gap.second).toFloat() /
+                            (gap.third - gap.second).coerceAtLeast(1L).toFloat()).coerceIn(0f, 1f)
+                    } else {
+                        1f
+                    }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
