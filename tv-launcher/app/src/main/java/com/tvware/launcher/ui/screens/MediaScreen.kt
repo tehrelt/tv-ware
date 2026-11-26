@@ -966,18 +966,19 @@ private fun MediaLyricsPanel(
                                 if (charIdx < layout.layoutInput.text.length) {
                                     val lineIdx = layout.getLineForOffset(charIdx)
                                     val box = layout.getBoundingBox(charIdx)
+                                    val lineTop = layout.getLineTop(lineIdx)
+                                    val lineBottom = layout.getLineBottom(lineIdx)
                                     val center = Offset(
                                         (box.left + box.right) * 0.5f,
-                                        (layout.getLineTop(lineIdx) + layout.getLineBottom(lineIdx)) * 0.5f,
+                                        (lineTop + lineBottom) * 0.5f,
                                     )
-                                    val radius = (box.right - box.left).coerceAtLeast(16f) * 1.45f
-                                    val glowAlpha = 0.32f * wave * wave
+                                    val radius = (lineBottom - lineTop) * 0.65f
+                                    val glowAlpha = 0.09f * wave
                                     drawCircle(
                                         brush = Brush.radialGradient(
-                                            colors = listOf(
-                                                Color.White.copy(alpha = glowAlpha),
-                                                Color.Transparent,
-                                            ),
+                                            0f to Color.White.copy(alpha = glowAlpha),
+                                            0.45f to Color.White.copy(alpha = glowAlpha * 0.4f),
+                                            1f to Color.Transparent,
                                             center = center,
                                             radius = radius,
                                         ),
