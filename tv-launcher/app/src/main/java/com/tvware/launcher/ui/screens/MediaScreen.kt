@@ -29,6 +29,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -88,17 +89,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextGeometricTransform
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Border
@@ -106,6 +102,7 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.tvware.launcher.data.BackgroundMode
+import com.tvware.launcher.data.LyricSyllable
 import com.tvware.launcher.data.LyricsData
 import com.tvware.launcher.data.LyricsState
 import com.tvware.launcher.data.LyricsSyncType
@@ -851,78 +848,65 @@ private fun MediaLyricsPanel(
                 }
 
                 if (isActive && lyrics.syncType == LyricsSyncType.SYLLABLE && line.syllables.isNotEmpty()) {
-                    var textLayout by remember(lyrics.trackId, index) {
-                        mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null)
-                    }
                     val sungColor = LauncherColors.TextPrimary
                     val unsungColor = LauncherColors.TextPrimary.copy(alpha = 0.26f)
-                    val annotated = buildAnnotatedString {
-                        line.syllables.forEachIndexed { sylIdx, syl ->
-                            val startChar = length
-                            val rawProgress = if (syl.endMs > syl.startMs) {
-                                ((currentPosMs - syl.startMs).toFloat() / (syl.endMs - syl.startMs).toFloat())
-                                    .coerceIn(0f, 1f)
-                            } else {
-                                if (currentPosMs >= syl.startMs) 1f else 0f
-                            }
-                            val progress = rawProgress * rawProgress * (3f - 2f * rawProgress)
-                            val activeGlow = if (rawProgress > 0f && rawProgress < 1f) {
-                                sin(rawProgress * PI).toFloat()
-                            } else {
-                                0f
-                            }
-                            val afterGlow = if (rawProgress >= 1f && syl.endMs > 0L) {
-                                (1f - (currentPosMs - syl.endMs).toFloat() / 280f).coerceIn(0f, 1f)
-                            } else {
-                                0f
-                            }
-                            val effect = maxOf(activeGlow, afterGlow)
-                            val shadow = if (effect > 0.01f) {
-                                Shadow(
-                                    color = Color.White.copy(alpha = 0.7f * effect),
-                                    offset = Offset.Zero,
-                                    blurRadius = 16f * effect,
-                                )
-                            } else {
-                                null
-                            }
-
-                            val endChar = startChar + syl.text.length
-                            val layout = textLayout
-                            val wipeBrush = if (
-                                rawProgress > 0f &&
-                                rawProgress < 1f &&
-                                layout != null &&
-                                endChar <= layout.layoutInput.text.length
-                            ) {
-                                val startX = layout.getHorizontalPosition(startChar, usePrimaryDirection = true)
-                                val endX = layout.getHorizontalPosition(endChar, usePrimaryDirection = true)
-                                if (endX > startX + 1f) {
-                                    val wipeX = startX + (endX - startX) * progress
-                                    val feather = ((endX - startX) * 0.28f).coerceAtLeast(10f)
-                                    Brush.horizontalGradient(
-                                        colors = listOf(sungColor, unsungColor),
-                                        startX = wipeX - feather,
-                                        endX = wipeX + feather,
-                                    )
-                                } else {
-                                    null
+                    val words = remember(line.syllables) {
+                        buildList<List<LyricSyllable>> {
+                            var current = mutableListOf<LyricSyllable>()
+                            for (syl in line.syllables) {
+                                current.add(syl)
+                                if (!syl.isPartOfWord) {
+                                    add(current.toList())
+                                    current = mutableListOf()
                                 }
-                            } else {
-                                null
                             }
+                            if (current.isNotEmpty()) add(current.toList())
+                        }
+                    }
+                    FlowRow(
+                        modifier = lineModifier,
+                        horizontalArrangement = Arrangement.spacedBy(
+                            8.dp,
+                            if (line.isOppositeAligned) Alignment.End else Alignment.Start,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        words.forEach { word ->
+                            Row {
+                                word.forEach { syl ->
+                                    var sylWidthPx by remember(syl) { mutableStateOf(0f) }
+                                    val rawProgress = if (syl.endMs > syl.startMs) {
+                                        ((currentPosMs - syl.startMs).toFloat() / (syl.endMs - syl.startMs).toFloat())
+                                            .coerceIn(0f, 1f)
+                                    } else {
+                                        if (currentPosMs >= syl.startMs) 1f else 0f
+                                    }
+                                    val progress = rawProgress * rawProgress * (3f - 2f * rawProgress)
+                                    val activeGlow = if (rawProgress > 0f && rawProgress < 1f) {
+                                        sin(rawProgress * PI).toFloat()
+                                    } else {
+                                        0f
+                                    }
+                                    val afterGlow = if (rawProgress >= 1f && syl.endMs > 0L) {
+                                        (1f - (currentPosMs - syl.endMs).toFloat() / 260f).coerceIn(0f, 1f)
+                                    } else {
+                                        0f
+                                    }
+                                    val effect = maxOf(activeGlow, afterGlow)
+                                    val shadow = if (effect > 0.01f) {
+                                        Shadow(
+                                            color = Color.White.copy(alpha = 0.65f * effect),
+                                            offset = Offset.Zero,
+                                            blurRadius = 10f * effect,
+                                        )
+                                    } else {
+                                        null
+                                    }
 
-                            val sylDurationMs = (syl.endMs - syl.startMs).coerceAtLeast(120L).toFloat()
-                            val fallMs = 240f
-                            val hasWaveTail = rawProgress > 0f &&
-                                (rawProgress < 1f || (syl.endMs > 0L && currentPosMs < syl.endMs + fallMs.toLong()))
-
-                            if (wipeBrush != null || (rawProgress >= 1f && hasWaveTail)) {
-                                val charCount = syl.text.length.coerceAtLeast(1)
-                                val riseMs = (sylDurationMs * 0.45f).coerceIn(90f, 180f)
-                                syl.text.forEachIndexed { charIdx, ch ->
-                                    val charOffsetMs = (charIdx.toFloat() / charCount) * (sylDurationMs * 0.65f)
-                                    val elapsed = (currentPosMs - syl.startMs).toFloat() - charOffsetMs
+                                    val sylDurationMs = (syl.endMs - syl.startMs).coerceAtLeast(120L).toFloat()
+                                    val riseMs = (sylDurationMs * 0.45f).coerceIn(90f, 180f)
+                                    val fallMs = 240f
+                                    val elapsed = (currentPosMs - syl.startMs).toFloat()
                                     val wave = when {
                                         elapsed <= 0f -> 0f
                                         elapsed < riseMs -> {
@@ -935,49 +919,50 @@ private fun MediaLyricsPanel(
                                         }
                                         else -> 0f
                                     }
-                                    val scaleY = 1f + 0.12f * wave
-                                    val hasWave = wave > 0.01f
-                                    val spanStyle = if (wipeBrush != null) {
-                                        SpanStyle(
-                                            brush = wipeBrush,
-                                            shadow = shadow,
-                                            fontSize = if (hasWave) (30f * scaleY).sp else TextUnit.Unspecified,
-                                            textGeometricTransform = if (hasWave) TextGeometricTransform(scaleX = 1f / scaleY) else null,
+
+                                    val wipeBrush = if (rawProgress > 0f && rawProgress < 1f && sylWidthPx > 1f) {
+                                        val wipeX = sylWidthPx * progress
+                                        val feather = (sylWidthPx * 0.28f).coerceAtLeast(10f)
+                                        Brush.horizontalGradient(
+                                            colors = listOf(sungColor, unsungColor),
+                                            startX = wipeX - feather,
+                                            endX = wipeX + feather,
                                         )
                                     } else {
-                                        SpanStyle(
-                                            color = sungColor,
+                                        null
+                                    }
+
+                                    val textStyle = if (wipeBrush != null) {
+                                        TextStyle(
+                                            fontSize = 30.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            lineHeight = 38.sp,
+                                            brush = wipeBrush,
                                             shadow = shadow,
-                                            fontSize = if (hasWave) (30f * scaleY).sp else TextUnit.Unspecified,
-                                            textGeometricTransform = if (hasWave) TextGeometricTransform(scaleX = 1f / scaleY) else null,
+                                        )
+                                    } else {
+                                        TextStyle(
+                                            fontSize = 30.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            lineHeight = 38.sp,
+                                            color = if (rawProgress >= 1f) sungColor else unsungColor,
+                                            shadow = shadow,
                                         )
                                     }
-                                    withStyle(spanStyle) {
-                                        append(ch)
-                                    }
+
+                                    Text(
+                                        text = syl.text,
+                                        onTextLayout = { sylWidthPx = it.size.width.toFloat() },
+                                        style = textStyle,
+                                        modifier = Modifier.graphicsLayer {
+                                            scaleY = 1f + 0.12f * wave
+                                            transformOrigin = TransformOrigin(0.5f, 0.82f)
+                                        },
+                                    )
                                 }
-                            } else {
-                                val color = if (rawProgress >= 1f) sungColor else unsungColor
-                                withStyle(SpanStyle(color = color, shadow = shadow)) {
-                                    append(syl.text)
-                                }
-                            }
-                            if (!syl.isPartOfWord && sylIdx < line.syllables.lastIndex) {
-                                append(' ')
                             }
                         }
                     }
-                    Text(
-                        text = annotated,
-                        textAlign = align,
-                        onTextLayout = { textLayout = it },
-                        style = TextStyle(
-                            fontSize = 30.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            lineHeight = 38.sp,
-                        ),
-                        modifier = lineModifier,
-                    )
                 } else {
                     Text(
                         text = line.text,
