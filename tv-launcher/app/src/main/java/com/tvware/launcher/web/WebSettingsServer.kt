@@ -1,6 +1,7 @@
 package com.tvware.launcher.web
 
 import com.tvware.launcher.data.BackgroundMode
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -75,6 +76,7 @@ class WebSettingsServer(
     private val handler: WebSettingsHandler,
     private val preferredPort: Int = DEFAULT_PORT,
     private val hostAddressProvider: () -> String? = ::findLanIpv4Address,
+    private val socketTimeoutMs: Int = SOCKET_TIMEOUT_MS,
 ) {
     private val lock = Any()
     private var serverSocket: ServerSocket? = null
@@ -128,69 +130,75 @@ class WebSettingsServer(
     }
 
     private suspend fun handleClient(socket: Socket, expectedToken: String) {
-        socket.use { client ->
-            client.soTimeout = SOCKET_TIMEOUT_MS
-            val input = BufferedInputStream(client.getInputStream())
-            val output = client.getOutputStream()
-            val request = readHttpRequest(input) ?: run {
-                writeResponse(output, 400, "text/plain; charset=utf-8", "Bad Request".toByteArray())
-                return
-            }
-            if (request.tooLarge) {
-                writeResponse(output, 413, "text/plain; charset=utf-8", "Payload Too Large".toByteArray())
-                return
-            }
+        try {
+            socket.use { client ->
+                client.soTimeout = socketTimeoutMs
+                val input = BufferedInputStream(client.getInputStream())
+                val output = client.getOutputStream()
+                val request = readHttpRequest(input) ?: run {
+                    writeResponse(output, 400, "text/plain; charset=utf-8", "Bad Request".toByteArray())
+                    return
+                }
+                if (request.tooLarge) {
+                    writeResponse(output, 413, "text/plain; charset=utf-8", "Payload Too Large".toByteArray())
+                    return
+                }
 
-            val providedToken = request.headers["x-auth-token"] ?: request.queryParams["t"]
-            if (!tokensEqual(expectedToken, providedToken)) {
-                writeResponse(output, 401, "text/plain; charset=utf-8", "Unauthorized".toByteArray())
-                return
-            }
+                val providedToken = request.headers["x-auth-token"] ?: request.queryParams["t"]
+                if (!tokensEqual(expectedToken, providedToken)) {
+                    writeResponse(output, 401, "text/plain; charset=utf-8", "Unauthorized".toByteArray())
+                    return
+                }
 
-            when {
-                request.method == "GET" && request.path == "/" -> {
-                    val html = buildWebSettingsHtml().toByteArray(StandardCharsets.UTF_8)
-                    writeResponse(output, 200, "text/html; charset=utf-8", html)
-                }
-                request.method == "GET" && request.path == "/api/state" -> {
-                    val json = snapshotToJson(handler.getSnapshot()).toString().toByteArray(StandardCharsets.UTF_8)
-                    writeResponse(output, 200, "application/json; charset=utf-8", json)
-                }
-                request.method == "POST" && request.path == "/api/settings" -> {
-                    if (request.body.size > MAX_JSON_BYTES) {
-                        writeResponse(output, 413, "text/plain; charset=utf-8", "Payload Too Large".toByteArray())
-                        return
+                when {
+                    request.method == "GET" && request.path == "/" -> {
+                        val html = buildWebSettingsHtml().toByteArray(StandardCharsets.UTF_8)
+                        writeResponse(output, 200, "text/html; charset=utf-8", html)
                     }
-                    val patch = parsePatch(String(request.body, StandardCharsets.UTF_8)) ?: run {
-                        writeResponse(output, 400, "text/plain; charset=utf-8", "Invalid JSON".toByteArray())
-                        return
+                    request.method == "GET" && request.path == "/api/state" -> {
+                        val json = snapshotToJson(handler.getSnapshot()).toString().toByteArray(StandardCharsets.UTF_8)
+                        writeResponse(output, 200, "application/json; charset=utf-8", json)
                     }
-                    val updated = handler.updateSettings(patch)
-                    val json = snapshotToJson(updated).toString().toByteArray(StandardCharsets.UTF_8)
-                    writeResponse(output, 200, "application/json; charset=utf-8", json)
-                }
-                request.method == "POST" && request.path == "/api/background" -> {
-                    if (request.body.isEmpty()) {
-                        writeResponse(output, 400, "text/plain; charset=utf-8", "Empty image".toByteArray())
-                        return
+                    request.method == "POST" && request.path == "/api/settings" -> {
+                        if (request.body.size > MAX_JSON_BYTES) {
+                            writeResponse(output, 413, "text/plain; charset=utf-8", "Payload Too Large".toByteArray())
+                            return
+                        }
+                        val patch = parsePatch(String(request.body, StandardCharsets.UTF_8)) ?: run {
+                            writeResponse(output, 400, "text/plain; charset=utf-8", "Invalid JSON".toByteArray())
+                            return
+                        }
+                        val updated = handler.updateSettings(patch)
+                        val json = snapshotToJson(updated).toString().toByteArray(StandardCharsets.UTF_8)
+                        writeResponse(output, 200, "application/json; charset=utf-8", json)
                     }
-                    val saved = handler.saveCustomBackground(request.body)
-                    if (!saved) {
-                        writeResponse(output, 400, "text/plain; charset=utf-8", "Invalid image".toByteArray())
-                        return
+                    request.method == "POST" && request.path == "/api/background" -> {
+                        if (request.body.isEmpty()) {
+                            writeResponse(output, 400, "text/plain; charset=utf-8", "Empty image".toByteArray())
+                            return
+                        }
+                        val saved = handler.saveCustomBackground(request.body)
+                        if (!saved) {
+                            writeResponse(output, 400, "text/plain; charset=utf-8", "Invalid image".toByteArray())
+                            return
+                        }
+                        val json = snapshotToJson(handler.getSnapshot()).toString().toByteArray(StandardCharsets.UTF_8)
+                        writeResponse(output, 200, "application/json; charset=utf-8", json)
                     }
-                    val json = snapshotToJson(handler.getSnapshot()).toString().toByteArray(StandardCharsets.UTF_8)
-                    writeResponse(output, 200, "application/json; charset=utf-8", json)
-                }
-                request.method == "DELETE" && request.path == "/api/background" -> {
-                    handler.clearCustomBackground()
-                    val json = snapshotToJson(handler.getSnapshot()).toString().toByteArray(StandardCharsets.UTF_8)
-                    writeResponse(output, 200, "application/json; charset=utf-8", json)
-                }
-                else -> {
-                    writeResponse(output, 404, "text/plain; charset=utf-8", "Not Found".toByteArray())
+                    request.method == "DELETE" && request.path == "/api/background" -> {
+                        handler.clearCustomBackground()
+                        val json = snapshotToJson(handler.getSnapshot()).toString().toByteArray(StandardCharsets.UTF_8)
+                        writeResponse(output, 200, "application/json; charset=utf-8", json)
+                    }
+                    else -> {
+                        writeResponse(output, 404, "text/plain; charset=utf-8", "Not Found".toByteArray())
+                    }
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Throwable) {
+            // Ignore per-client socket/IO errors (e.g. browser preconnect timeouts) so the server stays alive.
         }
     }
 
