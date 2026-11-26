@@ -40,16 +40,18 @@ class RepoSource:
     asset_name: str
     local_filename: str
     package_name: str
+    tag_prefix: str | None = None
 
 
 REPO_SOURCES: tuple[RepoSource, ...] = (
     RepoSource(
         key="tv-launcher",
         label="tv-launcher",
-        release_url="https://api.github.com/repos/tehrelt/tv-ware/releases/tags/launcher-latest",
+        release_url="https://api.github.com/repos/tehrelt/tv-ware/releases?per_page=20",
         asset_name="tv-launcher.apk",
         local_filename="tv-launcher.apk",
         package_name=LAUNCHER_PACKAGE,
+        tag_prefix="launcher-v",
     ),
     RepoSource(
         key="happ",
@@ -61,8 +63,12 @@ REPO_SOURCES: tuple[RepoSource, ...] = (
     ),
 )
 
-_SOURCES_BY_FILENAME = {source.local_filename.casefold(): source for source in REPO_SOURCES}
-_PRIORITY_BY_FILENAME = {source.local_filename.casefold(): idx for idx, source in enumerate(REPO_SOURCES)}
+_SOURCES_BY_FILENAME = {
+    source.local_filename.casefold(): source for source in REPO_SOURCES
+}
+_PRIORITY_BY_FILENAME = {
+    source.local_filename.casefold(): idx for idx, source in enumerate(REPO_SOURCES)
+}
 
 
 @dataclass(frozen=True)
@@ -83,7 +89,9 @@ def _validate_https_url(url: object) -> str:
     return url
 
 
-def select_release_asset(release_json: dict, asset_name: str) -> tuple[str, int, str, str]:
+def select_release_asset(
+    release_json: dict, asset_name: str
+) -> tuple[str, int, str, str]:
     if not isinstance(release_json, dict):
         raise ValueError("Release payload must be a JSON object")
     tag_name = release_json.get("tag_name")
@@ -100,7 +108,9 @@ def select_release_asset(release_json: dict, asset_name: str) -> tuple[str, int,
                 raise ValueError(f"Invalid asset id for {asset_name!r}: {asset_id!r}")
             updated_at = asset.get("updated_at")
             if not isinstance(updated_at, str) or not updated_at.strip():
-                raise ValueError(f"Invalid updated_at for {asset_name!r}: {updated_at!r}")
+                raise ValueError(
+                    f"Invalid updated_at for {asset_name!r}: {updated_at!r}"
+                )
             url = _validate_https_url(asset.get("browser_download_url"))
             return tag_name, asset_id, updated_at, url
 
@@ -156,7 +166,12 @@ def _save_versions(apks_dir: Path, versions_meta: dict) -> None:
     apks_dir.mkdir(parents=True, exist_ok=True)
     versions_path = apks_dir / _VERSIONS_FILENAME
     temp = tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", dir=apks_dir, prefix=".versions-", suffix=".tmp", delete=False,
+        mode="w",
+        encoding="utf-8",
+        dir=apks_dir,
+        prefix=".versions-",
+        suffix=".tmp",
+        delete=False,
     )
     temp_path = Path(temp.name)
     try:
@@ -174,7 +189,8 @@ def scan_local_apks(apks_dir: Path) -> list[LocalApk]:
         return []
     versions_meta = _load_versions(apks_dir)
     apk_paths = [
-        entry for entry in apks_dir.iterdir()
+        entry
+        for entry in apks_dir.iterdir()
         if entry.is_file() and entry.suffix.lower() == ".apk"
     ]
     apk_paths.sort(
@@ -191,8 +207,16 @@ def scan_local_apks(apks_dir: Path) -> list[LocalApk]:
         meta = versions_meta.get(source.key) if source is not None else None
         if not isinstance(meta, dict):
             meta = versions_meta.get(path.name)
-        version_tag = meta.get("tag_name") if isinstance(meta, dict) and isinstance(meta.get("tag_name"), str) else None
-        updated_at = meta.get("updated_at") if isinstance(meta, dict) and isinstance(meta.get("updated_at"), str) else None
+        version_tag = (
+            meta.get("tag_name")
+            if isinstance(meta, dict) and isinstance(meta.get("tag_name"), str)
+            else None
+        )
+        updated_at = (
+            meta.get("updated_at")
+            if isinstance(meta, dict) and isinstance(meta.get("updated_at"), str)
+            else None
+        )
         items.append(LocalApk(path.name, path, package_hint, version_tag, updated_at))
     return items
 
@@ -223,12 +247,38 @@ def _open_https(url: str, accept: str | None = None):
     return response
 
 
-def _fetch_release_json(url: str) -> dict:
+def _fetch_release_json(
+    url: str,
+    tag_prefix: str | None = None,
+    asset_name: str | None = None,
+) -> dict:
     with _open_https(url, accept="application/vnd.github+json") as response:
         payload = json.loads(response.read().decode("utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError("GitHub release response must be a JSON object")
-    return payload
+    if isinstance(payload, dict):
+        return payload
+    if isinstance(payload, list):
+        for item in payload:
+            if (
+                not isinstance(item, dict)
+                or item.get("draft")
+                or item.get("prerelease")
+            ):
+                continue
+            tag_name = item.get("tag_name")
+            if not isinstance(tag_name, str) or not tag_name.strip():
+                continue
+            if tag_prefix is not None and not tag_name.startswith(tag_prefix):
+                continue
+            if asset_name is not None:
+                assets = item.get("assets")
+                if not isinstance(assets, list) or not any(
+                    isinstance(asset, dict) and asset.get("name") == asset_name
+                    for asset in assets
+                ):
+                    continue
+            return item
+        raise ValueError(f"No matching release found at {url}")
+    raise ValueError("GitHub release response must be a JSON object or list")
 
 
 def _download_file(
@@ -238,13 +288,18 @@ def _download_file(
     progress_cb: Callable[[str, int, int], None] | None,
 ) -> None:
     with tempfile.NamedTemporaryFile(
-        dir=target_path.parent, prefix=f".{target_path.name}.", suffix=".part", delete=False,
+        dir=target_path.parent,
+        prefix=f".{target_path.name}.",
+        suffix=".part",
+        delete=False,
     ) as tmp:
         part_path = Path(tmp.name)
     try:
         with _open_https(url) as response, part_path.open("wb") as output:
             headers = getattr(response, "headers", None)
-            raw_length = headers.get("Content-Length") if hasattr(headers, "get") else None
+            raw_length = (
+                headers.get("Content-Length") if hasattr(headers, "get") else None
+            )
             try:
                 total = int(raw_length or 0)
             except (TypeError, ValueError):
@@ -277,10 +332,18 @@ def _download_source(
     log_cb: Callable[[str], None] | None,
 ) -> tuple[dict[str, dict], Path]:
     _log(log_cb, f"Checking {source.label} release...")
-    release_json = _fetch_release_json(source.release_url)
-    tag_name, asset_id, updated_at, download_url = select_release_asset(release_json, source.asset_name)
+    release_json = _fetch_release_json(
+        source.release_url,
+        tag_prefix=source.tag_prefix,
+        asset_name=source.asset_name,
+    )
+    tag_name, asset_id, updated_at, download_url = select_release_asset(
+        release_json, source.asset_name
+    )
     target_path = apks_dir / source.local_filename
-    if not force and not needs_download(versions_meta, source.key, tag_name, asset_id, updated_at, target_path):
+    if not force and not needs_download(
+        versions_meta, source.key, tag_name, asset_id, updated_at, target_path
+    ):
         _log(log_cb, f"{source.local_filename} is up to date ({tag_name})")
         return versions_meta, target_path
 
@@ -310,7 +373,9 @@ def download_repo_apks(
     versions_meta = _load_versions(apks_dir)
 
     for source in REPO_SOURCES:
-        versions_meta, _ = _download_source(source, apks_dir, versions_meta, force, progress_cb, log_cb)
+        versions_meta, _ = _download_source(
+            source, apks_dir, versions_meta, force, progress_cb, log_cb
+        )
 
     return scan_local_apks(apks_dir)
 
@@ -324,7 +389,9 @@ def download_launcher_apk(
     apks_dir.mkdir(parents=True, exist_ok=True)
     versions_meta = _load_versions(apks_dir)
     source = next(item for item in REPO_SOURCES if item.key == "tv-launcher")
-    _, target_path = _download_source(source, apks_dir, versions_meta, force, progress_cb, log_cb)
+    _, target_path = _download_source(
+        source, apks_dir, versions_meta, force, progress_cb, log_cb
+    )
     return target_path
 
 
@@ -359,12 +426,17 @@ def import_local_apk(src_path: Path, apks_dir: Path) -> Path:
     dest_dir = apks_dir.resolve()
     target = apks_dir / name
     resolved_target = target.resolve()
-    if resolved_target.parent != dest_dir or not resolved_target.is_relative_to(dest_dir):
+    if resolved_target.parent != dest_dir or not resolved_target.is_relative_to(
+        dest_dir
+    ):
         raise ValueError(f"Unsafe destination path for {name!r}")
 
     if src.resolve() != resolved_target:
         with tempfile.NamedTemporaryFile(
-            dir=apks_dir, prefix=f".{name}.", suffix=".part", delete=False,
+            dir=apks_dir,
+            prefix=f".{name}.",
+            suffix=".part",
+            delete=False,
         ) as tmp:
             part_path = Path(tmp.name)
         try:
@@ -380,7 +452,9 @@ def import_local_apk(src_path: Path, apks_dir: Path) -> Path:
         if source is not None and (apks_dir / _VERSIONS_FILENAME).is_file():
             versions_meta = _load_versions(apks_dir)
             if source.key in versions_meta:
-                updated_meta = {k: v for k, v in versions_meta.items() if k != source.key}
+                updated_meta = {
+                    k: v for k, v in versions_meta.items() if k != source.key
+                }
                 _save_versions(apks_dir, updated_meta)
 
     return target
@@ -394,16 +468,30 @@ def install_apk(adb: AdbClient, serial: str, apk_path: Path) -> None:
     result = adb.install(serial, apk_path, downgrade=True)
     output = _combined_output(result.stdout, result.stderr)
     if "INSTALL_FAILED_UPDATE_INCOMPATIBLE" in output:
-        raise SignatureConflictError(output or f"Signature conflict installing {apk_path.name}")
-    if result.returncode != 0 or "Failure [" in output or "INSTALL_FAILED_" in output or _FAILURE_LINE.search(output):
-        raise AdbError(output or f"adb install failed with exit code {result.returncode}")
+        raise SignatureConflictError(
+            output or f"Signature conflict installing {apk_path.name}"
+        )
+    if (
+        result.returncode != 0
+        or "Failure [" in output
+        or "INSTALL_FAILED_" in output
+        or _FAILURE_LINE.search(output)
+    ):
+        raise AdbError(
+            output or f"adb install failed with exit code {result.returncode}"
+        )
 
 
-def reinstall_after_uninstall(adb: AdbClient, serial: str, package_name: str, apk_path: Path) -> None:
+def reinstall_after_uninstall(
+    adb: AdbClient, serial: str, package_name: str, apk_path: Path
+) -> None:
     if not package_name or not package_name.strip():
         raise ValueError("package_name is required")
     result = adb.uninstall(serial, package_name)
     output = _combined_output(result.stdout, result.stderr)
     if result.returncode != 0 or _UNINSTALL_FAILURE.search(output):
-        raise AdbError(output or f"adb uninstall {package_name} failed with exit code {result.returncode}")
+        raise AdbError(
+            output
+            or f"adb uninstall {package_name} failed with exit code {result.returncode}"
+        )
     install_apk(adb, serial, apk_path)

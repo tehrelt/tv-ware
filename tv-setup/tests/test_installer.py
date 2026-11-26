@@ -22,7 +22,10 @@ from tv_setup.installer import (
 )
 
 
-def _json_response(payload: dict, url: str = "https://api.github.com/repos/example/repo/releases/latest"):
+def _json_response(
+    payload: dict | list,
+    url: str = "https://api.github.com/repos/example/repo/releases/latest",
+):
     raw = json.dumps(payload).encode("utf-8")
     resp = io.BytesIO(raw)
     resp.headers = {"Content-Length": str(len(raw))}
@@ -30,7 +33,9 @@ def _json_response(payload: dict, url: str = "https://api.github.com/repos/examp
     return resp
 
 
-def _bytes_response(data: bytes, url: str = "https://objects.githubusercontent.com/asset.apk"):
+def _bytes_response(
+    data: bytes, url: str = "https://objects.githubusercontent.com/asset.apk"
+):
     resp = io.BytesIO(data)
     resp.headers = {"Content-Length": str(len(data))}
     resp.geturl = lambda: url
@@ -52,10 +57,11 @@ class InstallerTests(unittest.TestCase):
             RepoSource(
                 key="tv-launcher",
                 label="tv-launcher",
-                release_url="https://api.github.com/repos/tehrelt/tv-ware/releases/tags/launcher-latest",
+                release_url="https://api.github.com/repos/tehrelt/tv-ware/releases?per_page=20",
                 asset_name="tv-launcher.apk",
                 local_filename="tv-launcher.apk",
                 package_name="com.tvware.launcher",
+                tag_prefix="launcher-v",
             ),
         )
         self.assertEqual(
@@ -88,8 +94,13 @@ class InstallerTests(unittest.TestCase):
                 },
             ],
         }
-        tag, asset_id, updated_at, url = select_release_asset(payload, "tv-launcher.apk")
-        self.assertEqual((tag, asset_id, updated_at), ("launcher-latest", 901, "2026-11-26T10:00:00Z"))
+        tag, asset_id, updated_at, url = select_release_asset(
+            payload, "tv-launcher.apk"
+        )
+        self.assertEqual(
+            (tag, asset_id, updated_at),
+            ("launcher-latest", 901, "2026-11-26T10:00:00Z"),
+        )
         self.assertTrue(url.startswith("https://"))
 
         payload["assets"][1]["browser_download_url"] = "http://insecure.example/a.apk"
@@ -110,7 +121,10 @@ class InstallerTests(unittest.TestCase):
             {"tag_name": "v1", "assets": [{**valid_asset, "name": "other.apk"}]},
             {"tag_name": "v1", "assets": [{**valid_asset, "id": True}]},
             {"tag_name": "v1", "assets": [{**valid_asset, "updated_at": ""}]},
-            {"tag_name": "v1", "assets": [{**valid_asset, "browser_download_url": "https://"}]},
+            {
+                "tag_name": "v1",
+                "assets": [{**valid_asset, "browser_download_url": "https://"}],
+            },
         ):
             with self.subTest(bad_payload=bad_payload):
                 with self.assertRaises(ValueError):
@@ -119,18 +133,59 @@ class InstallerTests(unittest.TestCase):
     def test_needs_download_detects_rolling_release_update(self):
         apk = self.root / "tv-launcher.apk"
         apk.write_bytes(b"apk")
-        meta = {"tv-launcher": {"tag_name": "launcher-latest", "asset_id": 901, "updated_at": "2026-11-26T10:00:00Z"}}
-        self.assertFalse(needs_download(meta, "tv-launcher", "launcher-latest", 901, "2026-11-26T10:00:00Z", apk))
-        self.assertTrue(needs_download(meta, "tv-launcher", "launcher-latest", 902, "2026-11-26T11:00:00Z", apk))
-        self.assertTrue(needs_download(meta, "tv-launcher", "launcher-latest", 901, "2026-11-26T11:00:00Z", apk))
-        self.assertTrue(needs_download(meta, "tv-launcher", "v2", 901, "2026-11-26T10:00:00Z", apk))
-        self.assertTrue(needs_download({}, "tv-launcher", "launcher-latest", 901, "2026-11-26T10:00:00Z", apk))
-        self.assertTrue(needs_download({"tv-launcher": "bad"}, "tv-launcher", "launcher-latest", 901, "2026-11-26T10:00:00Z", apk))
+        meta = {
+            "tv-launcher": {
+                "tag_name": "launcher-latest",
+                "asset_id": 901,
+                "updated_at": "2026-11-26T10:00:00Z",
+            }
+        }
+        self.assertFalse(
+            needs_download(
+                meta, "tv-launcher", "launcher-latest", 901, "2026-11-26T10:00:00Z", apk
+            )
+        )
+        self.assertTrue(
+            needs_download(
+                meta, "tv-launcher", "launcher-latest", 902, "2026-11-26T11:00:00Z", apk
+            )
+        )
+        self.assertTrue(
+            needs_download(
+                meta, "tv-launcher", "launcher-latest", 901, "2026-11-26T11:00:00Z", apk
+            )
+        )
+        self.assertTrue(
+            needs_download(meta, "tv-launcher", "v2", 901, "2026-11-26T10:00:00Z", apk)
+        )
+        self.assertTrue(
+            needs_download(
+                {}, "tv-launcher", "launcher-latest", 901, "2026-11-26T10:00:00Z", apk
+            )
+        )
+        self.assertTrue(
+            needs_download(
+                {"tv-launcher": "bad"},
+                "tv-launcher",
+                "launcher-latest",
+                901,
+                "2026-11-26T10:00:00Z",
+                apk,
+            )
+        )
 
         apk.write_bytes(b"")
-        self.assertTrue(needs_download(meta, "tv-launcher", "launcher-latest", 901, "2026-11-26T10:00:00Z", apk))
+        self.assertTrue(
+            needs_download(
+                meta, "tv-launcher", "launcher-latest", 901, "2026-11-26T10:00:00Z", apk
+            )
+        )
         apk.unlink()
-        self.assertTrue(needs_download(meta, "tv-launcher", "launcher-latest", 901, "2026-11-26T10:00:00Z", apk))
+        self.assertTrue(
+            needs_download(
+                meta, "tv-launcher", "launcher-latest", 901, "2026-11-26T10:00:00Z", apk
+            )
+        )
 
     def test_scan_local_apks_reads_versions_metadata(self):
         self.apks_dir.mkdir()
@@ -171,21 +226,25 @@ class InstallerTests(unittest.TestCase):
     def test_download_repo_apks_downloads_updates_metadata_and_skips_unchanged(self):
         launcher_release = {
             "tag_name": "launcher-latest",
-            "assets": [{
-                "id": 901,
-                "name": "tv-launcher.apk",
-                "updated_at": "2026-11-26T10:00:00Z",
-                "browser_download_url": "https://github.com/tehrelt/tv-ware/releases/download/launcher-latest/tv-launcher.apk",
-            }],
+            "assets": [
+                {
+                    "id": 901,
+                    "name": "tv-launcher.apk",
+                    "updated_at": "2026-11-26T10:00:00Z",
+                    "browser_download_url": "https://github.com/tehrelt/tv-ware/releases/download/launcher-latest/tv-launcher.apk",
+                }
+            ],
         }
         happ_release = {
             "tag_name": "v2.5.0",
-            "assets": [{
-                "id": 42,
-                "name": "Happ.apk",
-                "updated_at": "2026-11-25T08:00:00Z",
-                "browser_download_url": "https://github.com/Happ-proxy/happ-android/releases/download/v2.5.0/Happ.apk",
-            }],
+            "assets": [
+                {
+                    "id": 42,
+                    "name": "Happ.apk",
+                    "updated_at": "2026-11-25T08:00:00Z",
+                    "browser_download_url": "https://github.com/Happ-proxy/happ-android/releases/download/v2.5.0/Happ.apk",
+                }
+            ],
         }
         progress_calls = []
         logs = []
@@ -207,27 +266,45 @@ class InstallerTests(unittest.TestCase):
         with patch("urllib.request.urlopen", side_effect=fake_urlopen) as urlopen:
             items = download_repo_apks(
                 self.apks_dir,
-                progress_cb=lambda key, done, total: progress_calls.append((key, done, total)),
+                progress_cb=lambda key, done, total: progress_calls.append(
+                    (key, done, total)
+                ),
                 log_cb=logs.append,
             )
 
         self.assertEqual(urlopen.call_count, 4)
-        self.assertEqual((self.apks_dir / "tv-launcher.apk").read_bytes(), b"LAUNCHER_APK")
+        self.assertEqual(
+            (self.apks_dir / "tv-launcher.apk").read_bytes(), b"LAUNCHER_APK"
+        )
         self.assertEqual((self.apks_dir / "Happ.apk").read_bytes(), b"HAPP_APK")
         self.assertFalse(list(self.apks_dir.glob("*.part")))
         self.assertIn(("tv-launcher", 12, 12), progress_calls)
         self.assertIn(("happ", 8, 8), progress_calls)
         self.assertTrue(logs)
 
-        meta = json.loads((self.apks_dir / ".versions.json").read_text(encoding="utf-8"))
+        meta = json.loads(
+            (self.apks_dir / ".versions.json").read_text(encoding="utf-8")
+        )
         self.assertEqual(meta["tv-launcher"]["asset_id"], 901)
         self.assertEqual(meta["happ"]["tag_name"], "v2.5.0")
         self.assertIn("downloaded_at", meta["tv-launcher"])
         self.assertEqual(
             items,
             [
-                LocalApk("tv-launcher.apk", self.apks_dir / "tv-launcher.apk", "com.tvware.launcher", "launcher-latest", "2026-11-26T10:00:00Z"),
-                LocalApk("Happ.apk", self.apks_dir / "Happ.apk", "su.happ.proxyutility", "v2.5.0", "2026-11-25T08:00:00Z"),
+                LocalApk(
+                    "tv-launcher.apk",
+                    self.apks_dir / "tv-launcher.apk",
+                    "com.tvware.launcher",
+                    "launcher-latest",
+                    "2026-11-26T10:00:00Z",
+                ),
+                LocalApk(
+                    "Happ.apk",
+                    self.apks_dir / "Happ.apk",
+                    "su.happ.proxyutility",
+                    "v2.5.0",
+                    "2026-11-25T08:00:00Z",
+                ),
             ],
         )
 
@@ -241,7 +318,9 @@ class InstallerTests(unittest.TestCase):
             download_repo_apks(self.apks_dir, force=True)
         self.assertEqual(urlopen_force.call_count, 4)
 
-    def test_download_repo_apks_cleans_partial_file_and_preserves_existing_on_failure(self):
+    def test_download_repo_apks_cleans_partial_file_and_preserves_existing_on_failure(
+        self,
+    ):
         self.apks_dir.mkdir()
         existing = self.apks_dir / "tv-launcher.apk"
         existing.write_bytes(b"OLD_APK")
@@ -249,16 +328,20 @@ class InstallerTests(unittest.TestCase):
 
         launcher_release = {
             "tag_name": "launcher-latest",
-            "assets": [{
-                "id": 901,
-                "name": "tv-launcher.apk",
-                "updated_at": "2026-11-26T10:00:00Z",
-                "browser_download_url": "https://github.com/tehrelt/tv-ware/releases/download/launcher-latest/tv-launcher.apk",
-            }],
+            "assets": [
+                {
+                    "id": 901,
+                    "name": "tv-launcher.apk",
+                    "updated_at": "2026-11-26T10:00:00Z",
+                    "browser_download_url": "https://github.com/tehrelt/tv-ware/releases/download/launcher-latest/tv-launcher.apk",
+                }
+            ],
         }
         broken_stream = MagicMock()
         broken_stream.headers = {}
-        broken_stream.geturl.return_value = "https://objects.githubusercontent.com/tv-launcher.apk"
+        broken_stream.geturl.return_value = (
+            "https://objects.githubusercontent.com/tv-launcher.apk"
+        )
         broken_stream.read.side_effect = [b"partial", OSError("connection reset")]
         broken_cm = MagicMock()
         broken_cm.__enter__.return_value = broken_stream
@@ -268,7 +351,10 @@ class InstallerTests(unittest.TestCase):
                 return _json_response(launcher_release, req.full_url)
             return broken_cm
 
-        with patch("urllib.request.urlopen", side_effect=fake_urlopen), self.assertLogs("tv_setup.installer", level="WARNING"):
+        with (
+            patch("urllib.request.urlopen", side_effect=fake_urlopen),
+            self.assertLogs("tv_setup.installer", level="WARNING"),
+        ):
             with self.assertRaises(OSError):
                 download_repo_apks(self.apks_dir)
 
@@ -278,18 +364,22 @@ class InstallerTests(unittest.TestCase):
     def test_download_repo_apks_rejects_insecure_redirect_and_cleans_part(self):
         launcher_release = {
             "tag_name": "launcher-latest",
-            "assets": [{
-                "id": 901,
-                "name": "tv-launcher.apk",
-                "updated_at": "2026-11-26T10:00:00Z",
-                "browser_download_url": "https://github.com/tehrelt/tv-ware/releases/download/launcher-latest/tv-launcher.apk",
-            }],
+            "assets": [
+                {
+                    "id": 901,
+                    "name": "tv-launcher.apk",
+                    "updated_at": "2026-11-26T10:00:00Z",
+                    "browser_download_url": "https://github.com/tehrelt/tv-ware/releases/download/launcher-latest/tv-launcher.apk",
+                }
+            ],
         }
 
         def fake_urlopen(req, timeout=None):
             if req.full_url == REPO_SOURCES[0].release_url:
                 return _json_response(launcher_release, req.full_url)
-            return _bytes_response(b"APK", url="http://downgraded.example/tv-launcher.apk")
+            return _bytes_response(
+                b"APK", url="http://downgraded.example/tv-launcher.apk"
+            )
 
         with patch("urllib.request.urlopen", side_effect=fake_urlopen):
             with self.assertRaises(ValueError):
@@ -301,12 +391,14 @@ class InstallerTests(unittest.TestCase):
     def test_download_repo_apks_rejects_empty_download(self):
         launcher_release = {
             "tag_name": "launcher-latest",
-            "assets": [{
-                "id": 901,
-                "name": "tv-launcher.apk",
-                "updated_at": "2026-11-26T10:00:00Z",
-                "browser_download_url": "https://github.com/tehrelt/tv-ware/releases/download/launcher-latest/tv-launcher.apk",
-            }],
+            "assets": [
+                {
+                    "id": 901,
+                    "name": "tv-launcher.apk",
+                    "updated_at": "2026-11-26T10:00:00Z",
+                    "browser_download_url": "https://github.com/tehrelt/tv-ware/releases/download/launcher-latest/tv-launcher.apk",
+                }
+            ],
         }
 
         def fake_urlopen(req, timeout=None):
@@ -332,16 +424,20 @@ class InstallerTests(unittest.TestCase):
                 "updated_at": "2026-11-25T10:00:00Z",
             }
         }
-        (self.apks_dir / ".versions.json").write_text(json.dumps(old_meta), encoding="utf-8")
+        (self.apks_dir / ".versions.json").write_text(
+            json.dumps(old_meta), encoding="utf-8"
+        )
 
         launcher_release = {
             "tag_name": "launcher-latest",
-            "assets": [{
-                "id": 901,
-                "name": "tv-launcher.apk",
-                "updated_at": "2026-11-26T10:00:00Z",
-                "browser_download_url": "https://github.com/tehrelt/tv-ware/releases/download/launcher-latest/tv-launcher.apk",
-            }],
+            "assets": [
+                {
+                    "id": 901,
+                    "name": "tv-launcher.apk",
+                    "updated_at": "2026-11-26T10:00:00Z",
+                    "browser_download_url": "https://github.com/tehrelt/tv-ware/releases/download/launcher-latest/tv-launcher.apk",
+                }
+            ],
         }
         truncated = _bytes_response(b"partial")
         truncated.headers = {"Content-Length": "100"}
@@ -358,7 +454,10 @@ class InstallerTests(unittest.TestCase):
                 download_repo_apks(self.apks_dir)
 
         self.assertEqual(existing.read_bytes(), b"OLD_APK")
-        self.assertEqual(json.loads((self.apks_dir / ".versions.json").read_text(encoding="utf-8")), old_meta)
+        self.assertEqual(
+            json.loads((self.apks_dir / ".versions.json").read_text(encoding="utf-8")),
+            old_meta,
+        )
         self.assertFalse(list(self.apks_dir.glob("*.part")))
 
     def test_import_local_apk_validates_and_copies_atomically(self):
@@ -380,7 +479,10 @@ class InstallerTests(unittest.TestCase):
         local_launcher = self.root / "tv-launcher.apk"
         local_launcher.write_bytes(b"LOCAL_BUILD")
         import_local_apk(local_launcher, self.apks_dir)
-        self.assertEqual(json.loads((self.apks_dir / ".versions.json").read_text(encoding="utf-8")), {})
+        self.assertEqual(
+            json.loads((self.apks_dir / ".versions.json").read_text(encoding="utf-8")),
+            {},
+        )
 
     def test_import_local_apk_cleans_part_on_copy_failure(self):
         src = self.root / "SmartTube.apk"
@@ -404,7 +506,13 @@ class InstallerTests(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             import_local_apk(self.root / "missing.apk", self.apks_dir)
 
-        for bad_name in ("CON.apk", "bad:name.apk", "../evil.apk", "..\\evil.apk", "foo.apk."):
+        for bad_name in (
+            "CON.apk",
+            "bad:name.apk",
+            "../evil.apk",
+            "..\\evil.apk",
+            "foo.apk.",
+        ):
             fake_path = MagicMock(spec=Path)
             fake_path.name = bad_name
             with self.subTest(bad_name=bad_name):
@@ -413,14 +521,22 @@ class InstallerTests(unittest.TestCase):
 
     def test_install_apk_raises_signature_conflict_error(self):
         adb = MagicMock()
-        adb.install.return_value = AdbResult(1, "", "Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE: signatures do not match]")
+        adb.install.return_value = AdbResult(
+            1,
+            "",
+            "Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE: signatures do not match]",
+        )
         with self.assertRaises(SignatureConflictError):
             install_apk(adb, "192.168.31.42:5555", Path("tv-launcher.apk"))
-        adb.install.assert_called_once_with("192.168.31.42:5555", Path("tv-launcher.apk"), downgrade=True)
+        adb.install.assert_called_once_with(
+            "192.168.31.42:5555", Path("tv-launcher.apk"), downgrade=True
+        )
 
     def test_install_apk_handles_success_and_other_failures(self):
         adb = MagicMock()
-        adb.install.return_value = AdbResult(0, "Performing Streamed Install\nSuccess\n", "")
+        adb.install.return_value = AdbResult(
+            0, "Performing Streamed Install\nSuccess\n", ""
+        )
         install_apk(adb, "SER1", Path("app.apk"))
 
         for result in (
@@ -438,9 +554,13 @@ class InstallerTests(unittest.TestCase):
         adb = MagicMock()
         adb.uninstall.return_value = AdbResult(0, "Success\n", "")
         adb.install.return_value = AdbResult(0, "Success\n", "")
-        reinstall_after_uninstall(adb, "SER1", "com.tvware.launcher", Path("tv-launcher.apk"))
+        reinstall_after_uninstall(
+            adb, "SER1", "com.tvware.launcher", Path("tv-launcher.apk")
+        )
         adb.uninstall.assert_called_once_with("SER1", "com.tvware.launcher")
-        adb.install.assert_called_once_with("SER1", Path("tv-launcher.apk"), downgrade=True)
+        adb.install.assert_called_once_with(
+            "SER1", Path("tv-launcher.apk"), downgrade=True
+        )
 
         for bad_uninstall in (
             AdbResult(1, "", "Failure [DELETE_FAILED_INTERNAL_ERROR]"),
@@ -451,18 +571,22 @@ class InstallerTests(unittest.TestCase):
                 adb.reset_mock()
                 adb.uninstall.return_value = bad_uninstall
                 with self.assertRaises(AdbError):
-                    reinstall_after_uninstall(adb, "SER1", "com.tvware.launcher", Path("tv-launcher.apk"))
+                    reinstall_after_uninstall(
+                        adb, "SER1", "com.tvware.launcher", Path("tv-launcher.apk")
+                    )
                 adb.install.assert_not_called()
 
     def test_download_launcher_apk_fetches_only_launcher(self):
         launcher_release = {
             "tag_name": "launcher-latest",
-            "assets": [{
-                "id": 905,
-                "name": "tv-launcher.apk",
-                "updated_at": "2026-11-26T12:00:00Z",
-                "browser_download_url": "https://github.com/tehrelt/tv-ware/releases/download/launcher-latest/tv-launcher.apk",
-            }],
+            "assets": [
+                {
+                    "id": 905,
+                    "name": "tv-launcher.apk",
+                    "updated_at": "2026-11-26T12:00:00Z",
+                    "browser_download_url": "https://github.com/tehrelt/tv-ware/releases/download/launcher-latest/tv-launcher.apk",
+                }
+            ],
         }
 
         def fake_urlopen(req, timeout=None):
@@ -478,6 +602,62 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(apk_path, self.apks_dir / "tv-launcher.apk")
         self.assertEqual(apk_path.read_bytes(), b"LAUNCHER_NEW")
         self.assertFalse((self.apks_dir / "Happ.apk").exists())
+
+    def test_download_launcher_apk_selects_versioned_release_from_list(self):
+        releases = [
+            {
+                "tag_name": "launcher-latest",
+                "draft": False,
+                "prerelease": False,
+                "assets": [
+                    {
+                        "id": 900,
+                        "name": "tv-launcher.apk",
+                        "updated_at": "2026-11-26T12:00:00Z",
+                        "browser_download_url": "https://github.com/tehrelt/tv-ware/releases/download/launcher-latest/tv-launcher.apk",
+                    }
+                ],
+            },
+            {
+                "tag_name": "launcher-v1.0.13",
+                "draft": True,
+                "prerelease": False,
+                "assets": [
+                    {
+                        "id": 906,
+                        "name": "tv-launcher.apk",
+                        "updated_at": "2026-11-26T12:05:00Z",
+                        "browser_download_url": "https://github.com/tehrelt/tv-ware/releases/download/launcher-v1.0.13/tv-launcher.apk",
+                    }
+                ],
+            },
+            {
+                "tag_name": "launcher-v1.0.12",
+                "draft": False,
+                "prerelease": False,
+                "assets": [
+                    {
+                        "id": 905,
+                        "name": "tv-launcher.apk",
+                        "updated_at": "2026-11-26T12:00:00Z",
+                        "browser_download_url": "https://github.com/tehrelt/tv-ware/releases/download/launcher-v1.0.12/tv-launcher.apk",
+                    }
+                ],
+            },
+        ]
+
+        def fake_urlopen(req, timeout=None):
+            if req.full_url == REPO_SOURCES[0].release_url:
+                return _json_response(releases, req.full_url)
+            if req.full_url == releases[2]["assets"][0]["browser_download_url"]:
+                return _bytes_response(b"LAUNCHER_V12")
+            raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            download_launcher_apk(self.apks_dir)
+
+        items = scan_local_apks(self.apks_dir)
+        self.assertEqual(items[0].version_tag, "launcher-v1.0.12")
 
 
 if __name__ == "__main__":
