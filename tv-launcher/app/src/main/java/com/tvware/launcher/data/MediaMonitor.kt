@@ -360,6 +360,7 @@ class MediaMonitor(
             canSkipNext = canSkipNext,
             artwork = cachedArtwork,
             artworkKey = artworkKey,
+            mediaId = trackKey.mediaId,
         )
     }
 

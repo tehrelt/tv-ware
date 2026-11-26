@@ -22,12 +22,16 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -74,9 +78,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -85,9 +93,13 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.tvware.launcher.data.BackgroundMode
+import com.tvware.launcher.data.LyricsData
+import com.tvware.launcher.data.LyricsState
+import com.tvware.launcher.data.LyricsSyncType
 import com.tvware.launcher.data.MediaSessionInfo
 import com.tvware.launcher.data.NetworkStatus
 import com.tvware.launcher.data.computePlaybackPositionMs
+import com.tvware.launcher.data.findActiveLyricLineIndex
 import com.tvware.launcher.data.formatMediaDuration
 import com.tvware.launcher.ui.components.NetworkStatusIndicator
 import com.tvware.launcher.ui.theme.LauncherColors
@@ -115,6 +127,8 @@ fun MediaScreen(
     backgroundMode: BackgroundMode,
     customBackgroundBitmap: ImageBitmap?,
     isVisible: Boolean,
+    lyricsEnabled: Boolean,
+    lyricsState: LyricsState,
     onTogglePlayPause: () -> Unit,
     onSkipPrevious: () -> Unit,
     onSkipNext: () -> Unit,
@@ -251,82 +265,177 @@ fun MediaScreen(
                 )
             }
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(48.dp),
-            ) {
-                MediaArtworkCard(
-                    artwork = media.artwork,
-                    title = media.title,
-                )
-
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.Center,
+            val readyLyrics = if (lyricsEnabled) (lyricsState as? LyricsState.Ready)?.data else null
+            if (readyLyrics != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(48.dp),
                 ) {
-                    Text(
-                        text = media.title,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        style = TextStyle(
-                            fontSize = 32.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            lineHeight = 38.sp,
-                            color = LauncherColors.TextPrimary,
-                        ),
+                    Column(
+                        modifier = Modifier.weight(0.44f),
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        MediaArtworkCard(
+                            artwork = media.artwork,
+                            title = media.title,
+                            compact = true,
+                        )
+
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        Text(
+                            text = media.title,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            style = TextStyle(
+                                fontSize = 26.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                lineHeight = 32.sp,
+                                color = LauncherColors.TextPrimary,
+                            ),
+                        )
+
+                        if (media.artist.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = media.artist,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = TextStyle(
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    color = LauncherColors.TextSecondary,
+                                ),
+                            )
+                        }
+
+                        if (media.album.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = media.album,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = TextStyle(
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    color = LauncherColors.TextMuted,
+                                ),
+                            )
+                        }
+
+                        if (media.durationMs > 0L) {
+                            Spacer(modifier = Modifier.height(18.dp))
+                            MediaProgressSection(
+                                media = media,
+                                isVisible = isVisible,
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        MediaChromeSlot(visible = controlsVisible, height = 60.dp) {
+                            MediaControlsRow(
+                                media = media,
+                                isVisible = isVisible && controlsVisible,
+                                playPauseFocus = playPauseFocus,
+                                onTogglePlayPause = onTogglePlayPause,
+                                onSkipPrevious = onSkipPrevious,
+                                onSkipNext = onSkipNext,
+                                onOpenApp = onOpenApp,
+                            )
+                        }
+                    }
+
+                    MediaLyricsPanel(
+                        lyrics = readyLyrics,
+                        media = media,
+                        isVisible = isVisible,
+                        modifier = Modifier
+                            .weight(0.56f)
+                            .fillMaxHeight(),
+                    )
+                }
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(48.dp),
+                ) {
+                    MediaArtworkCard(
+                        artwork = media.artwork,
+                        title = media.title,
                     )
 
-                    if (media.artist.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(8.dp))
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.Center,
+                    ) {
                         Text(
-                            text = media.artist,
-                            maxLines = 1,
+                            text = media.title,
+                            maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                             style = TextStyle(
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Normal,
-                                color = LauncherColors.TextSecondary,
+                                fontSize = 32.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                lineHeight = 38.sp,
+                                color = LauncherColors.TextPrimary,
                             ),
                         )
-                    }
 
-                    if (media.album.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = media.album,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = TextStyle(
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Normal,
-                                color = LauncherColors.TextMuted,
-                            ),
-                        )
-                    }
+                        if (media.artist.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = media.artist,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = TextStyle(
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    color = LauncherColors.TextSecondary,
+                                ),
+                            )
+                        }
 
-                    if (media.durationMs > 0L) {
-                        Spacer(modifier = Modifier.height(24.dp))
-                        MediaProgressSection(
-                            media = media,
-                            isVisible = isVisible,
-                        )
-                    }
+                        if (media.album.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = media.album,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = TextStyle(
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    color = LauncherColors.TextMuted,
+                                ),
+                            )
+                        }
 
-                    Spacer(modifier = Modifier.height(28.dp))
+                        if (media.durationMs > 0L) {
+                            Spacer(modifier = Modifier.height(24.dp))
+                            MediaProgressSection(
+                                media = media,
+                                isVisible = isVisible,
+                            )
+                        }
 
-                    MediaChromeSlot(visible = controlsVisible, height = 60.dp) {
-                        MediaControlsRow(
-                            media = media,
-                            isVisible = isVisible && controlsVisible,
-                            playPauseFocus = playPauseFocus,
-                            onTogglePlayPause = onTogglePlayPause,
-                            onSkipPrevious = onSkipPrevious,
-                            onSkipNext = onSkipNext,
-                            onOpenApp = onOpenApp,
-                        )
+                        Spacer(modifier = Modifier.height(28.dp))
+
+                        MediaChromeSlot(visible = controlsVisible, height = 60.dp) {
+                            MediaControlsRow(
+                                media = media,
+                                isVisible = isVisible && controlsVisible,
+                                playPauseFocus = playPauseFocus,
+                                onTogglePlayPause = onTogglePlayPause,
+                                onSkipPrevious = onSkipPrevious,
+                                onSkipNext = onSkipNext,
+                                onOpenApp = onOpenApp,
+                            )
+                        }
                     }
                 }
             }
@@ -466,12 +575,18 @@ private fun MediaTopBar(
 }
 
 @Composable
-internal fun MediaArtworkCard(artwork: ImageBitmap?, title: String) {
+internal fun MediaArtworkCard(
+    artwork: ImageBitmap?,
+    title: String,
+    compact: Boolean = false,
+) {
     val cardShape = RoundedCornerShape(20.dp)
-    val cardModifier = if (artwork != null && artwork.width > artwork.height * 1.25f) {
-        Modifier.width(360.dp).aspectRatio(16f / 9f)
-    } else {
-        Modifier.size(264.dp)
+    val isWide = artwork != null && artwork.width > artwork.height * 1.25f
+    val cardModifier = when {
+        compact && isWide -> Modifier.width(280.dp).aspectRatio(16f / 9f)
+        compact -> Modifier.size(200.dp)
+        isWide -> Modifier.width(360.dp).aspectRatio(16f / 9f)
+        else -> Modifier.size(264.dp)
     }
     Box(
         modifier = cardModifier
@@ -489,6 +604,147 @@ internal fun MediaArtworkCard(artwork: ImageBitmap?, title: String) {
             )
         } else {
             MusicNoteIcon(tint = LauncherColors.TextMuted, modifier = Modifier.size(64.dp))
+        }
+    }
+}
+
+@Composable
+private fun MediaLyricsPanel(
+    lyrics: LyricsData,
+    media: MediaSessionInfo,
+    isVisible: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    var currentPosMs by remember(
+        media.sessionKey,
+        media.positionMs,
+        media.positionUpdateTimeMs,
+        media.playbackSpeed,
+        media.durationMs,
+        media.isPlaying,
+    ) {
+        mutableLongStateOf(
+            computePlaybackPositionMs(
+                positionMs = media.positionMs,
+                durationMs = media.durationMs,
+                playbackSpeed = media.playbackSpeed,
+                lastUpdateElapsedMs = media.positionUpdateTimeMs,
+                nowElapsedMs = SystemClock.elapsedRealtime(),
+                isPlaying = media.isPlaying,
+            ),
+        )
+    }
+
+    LaunchedEffect(
+        isVisible,
+        media.sessionKey,
+        media.isPlaying,
+        media.positionMs,
+        media.positionUpdateTimeMs,
+        media.playbackSpeed,
+        media.durationMs,
+    ) {
+        while (isVisible && media.isPlaying) {
+            currentPosMs = computePlaybackPositionMs(
+                positionMs = media.positionMs,
+                durationMs = media.durationMs,
+                playbackSpeed = media.playbackSpeed,
+                lastUpdateElapsedMs = media.positionUpdateTimeMs,
+                nowElapsedMs = SystemClock.elapsedRealtime(),
+                isPlaying = true,
+            )
+            delay(120L)
+        }
+    }
+
+    val activeIndex = findActiveLyricLineIndex(lyrics.lines, currentPosMs, lyrics.syncType)
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(lyrics.trackId, activeIndex) {
+        if (activeIndex >= 0 && activeIndex < lyrics.lines.size) {
+            listState.animateScrollToItem(index = activeIndex, scrollOffset = -140)
+        }
+    }
+
+    Column(
+        modifier = modifier.focusProperties { canFocus = false },
+    ) {
+        LazyColumn(
+            state = listState,
+            userScrollEnabled = false,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            contentPadding = PaddingValues(top = 120.dp, bottom = 160.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            itemsIndexed(
+                items = lyrics.lines,
+                key = { index, line -> "${lyrics.trackId}_${index}_${line.startMs}" },
+            ) { index, line ->
+                val isActive = index == activeIndex
+                val align = if (line.isOppositeAligned) TextAlign.End else TextAlign.Start
+                if (isActive && lyrics.syncType == LyricsSyncType.SYLLABLE && line.syllables.isNotEmpty()) {
+                    val annotated = buildAnnotatedString {
+                        line.syllables.forEachIndexed { sylIdx, syl ->
+                            val color = if (currentPosMs >= syl.startMs) {
+                                LauncherColors.TextPrimary
+                            } else {
+                                LauncherColors.TextPrimary.copy(alpha = 0.45f)
+                            }
+                            withStyle(SpanStyle(color = color)) {
+                                append(syl.text)
+                            }
+                            if (!syl.isPartOfWord && sylIdx < line.syllables.lastIndex) {
+                                append(' ')
+                            }
+                        }
+                    }
+                    Text(
+                        text = annotated,
+                        textAlign = align,
+                        style = TextStyle(
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            lineHeight = 36.sp,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                } else {
+                    val color = when {
+                        isActive -> LauncherColors.TextPrimary
+                        lyrics.syncType == LyricsSyncType.STATIC -> LauncherColors.TextPrimary.copy(alpha = 0.82f)
+                        activeIndex >= 0 && index < activeIndex -> LauncherColors.TextPrimary.copy(alpha = 0.34f)
+                        else -> LauncherColors.TextPrimary.copy(alpha = 0.54f)
+                    }
+                    Text(
+                        text = line.text,
+                        textAlign = align,
+                        style = TextStyle(
+                            fontSize = if (isActive) 28.sp else 22.sp,
+                            fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Medium,
+                            lineHeight = if (isActive) 36.sp else 30.sp,
+                            color = color,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        }
+
+        if (!lyrics.attribution.isNullOrBlank()) {
+            Text(
+                text = lyrics.attribution,
+                textAlign = TextAlign.End,
+                style = TextStyle(
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = LauncherColors.TextMuted.copy(alpha = 0.72f),
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+            )
         }
     }
 }

@@ -8,9 +8,7 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
 import androidx.activity.viewModels
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -60,24 +58,17 @@ class MainActivity : ComponentActivity() {
                         menu = null
                     }
                 }
-                val picker = rememberLauncherForActivityResult(OpenDocument()) { uri ->
-                    uri?.let(model::importCustomBackground)
+                LaunchedEffect(settings) {
+                    if (settings) {
+                        model.startWebSettingsServer()
+                    }
                 }
                 BackHandler(enabled = !settings && menu == null && !state.showMediaScreen) {}
                 if (settings) {
                     SettingsScreen(
                         uiState = state,
-                        onSelectBackgroundMode = model::setBackgroundMode,
-                        onPickCustomBackground = {
-                            runCatching { picker.launch(arrayOf("image/*")) }
-                                .onFailure { message("Не удалось открыть выбор файла") }
-                        },
-                        onClearCustomBackground = model::clearCustomBackground,
-                        onSelectGridColumns = model::setGridColumns,
-                        onSetMediaScreenEnabled = model::setMediaScreenEnabled,
                         onRequestMediaAccess = ::openMediaAccessSettings,
-                        onSetAutoStartHapp = model::setAutoStartHapp,
-                        onUnhideApp = model::unhideApp,
+                        onRetryServer = model::startWebSettingsServer,
                         onBack = { settings = false },
                     )
                 } else {
@@ -126,6 +117,11 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         model.onLauncherResumed(allowAutoShow = !isSettingsOpen)
+    }
+
+    override fun onStop() {
+        model.stopWebSettingsServer()
+        super.onStop()
     }
 
     override fun onNewIntent(intent: Intent) {

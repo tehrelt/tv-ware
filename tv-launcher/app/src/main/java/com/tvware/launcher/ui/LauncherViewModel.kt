@@ -13,16 +13,24 @@ import com.tvware.launcher.data.AppArtwork
 import com.tvware.launcher.data.AppInfo
 import com.tvware.launcher.data.BackgroundMode
 import com.tvware.launcher.data.LauncherSettings
+import com.tvware.launcher.data.LyricsState
 import com.tvware.launcher.data.MediaMonitorState
 import com.tvware.launcher.data.MediaScreenReducer
 import com.tvware.launcher.data.MediaScreenVisibilityState
 import com.tvware.launcher.data.NetworkStatus
+import com.tvware.launcher.data.SpicyLyricsClient
 import com.tvware.launcher.data.shouldAutoStartHapp
+import com.tvware.launcher.web.WebAppItem
+import com.tvware.launcher.web.WebSettingsHandler
+import com.tvware.launcher.web.WebSettingsPatch
+import com.tvware.launcher.web.WebSettingsServer
+import com.tvware.launcher.web.WebSettingsSnapshot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -48,6 +56,10 @@ data class LauncherUiState(
     val customBackgroundBitmap: ImageBitmap? = null,
     val networkStatus: NetworkStatus = NetworkStatus(),
     val mediaScreenEnabled: Boolean = true,
+    val lyricsEnabled: Boolean = true,
+    val hasSpicyLyricsKey: Boolean = false,
+    val lyricsState: LyricsState = LyricsState.Idle,
+    val webSettingsUrl: String? = null,
     val autoStartHapp: Boolean = true,
     val mediaState: MediaMonitorState = MediaMonitorState(),
     val showMediaScreen: Boolean = false,
@@ -66,17 +78,33 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val backgroundLock = Mutex()
     private val customBgBitmap = MutableStateFlow<ImageBitmap?>(null)
     private val mediaVisibility = MutableStateFlow(MediaScreenVisibilityState())
+    private val lyricsState = MutableStateFlow<LyricsState>(LyricsState.Idle)
+    private val webSettingsUrl = MutableStateFlow<String?>(null)
+    private val spicyLyricsClient = SpicyLyricsClient()
+    private val webSettingsServer = WebSettingsServer(
+        scope = viewModelScope,
+        handler = createWebSettingsHandler(),
+    )
     @Volatile
     private var latestMediaEnabled = true
+
+    private data class MediaUiBundle(
+        val media: MediaMonitorState,
+        val visibility: MediaScreenVisibilityState,
+        val lyrics: LyricsState,
+        val webUrl: String?,
+    )
 
     val uiState: StateFlow<LauncherUiState> = combine(
         repository.apps,
         preferences.settingsFlow,
         networkMonitor.status,
         customBgBitmap,
-        combine(mediaMonitor.state, mediaVisibility) { media, visibility -> media to visibility },
-    ) { installed, settings, netStatus, bgBitmap, (media, visibility) ->
-        buildUiState(installed, settings, netStatus, bgBitmap, media, visibility)
+        combine(mediaMonitor.state, mediaVisibility, lyricsState, webSettingsUrl) { media, visibility, lyrics, webUrl ->
+            MediaUiBundle(media, visibility, lyrics, webUrl)
+        },
+    ) { installed, settings, netStatus, bgBitmap, bundle ->
+        buildUiState(installed, settings, netStatus, bgBitmap, bundle)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -130,6 +158,64 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     }
                 }
         }
+
+        viewModelScope.launch {
+            combine(
+                mediaMonitor.state.map { state ->
+                    state.activeMedia?.let {
+                        LyricsTrackQuery(
+                            mediaId = it.mediaId,
+                            title = it.title,
+                            artist = it.artist,
+                            album = it.album,
+                            durationMs = it.durationMs,
+                        )
+                    }
+                }.distinctUntilChanged(),
+                preferences.settingsFlow.map { it.lyricsEnabled to it.spicyLyricsApiKey }.distinctUntilChanged(),
+            ) { track, (enabled, apiKey) ->
+                Triple(track, enabled, apiKey)
+            }.collectLatest { (track, enabled, apiKey) ->
+                if (!enabled || apiKey.isBlank() || track == null) {
+                    lyricsState.value = LyricsState.Idle
+                    return@collectLatest
+                }
+                lyricsState.value = LyricsState.Loading
+                lyricsState.value = spicyLyricsClient.fetchLyrics(
+                    apiKey = apiKey,
+                    mediaId = track.mediaId,
+                    title = track.title,
+                    artist = track.artist,
+                    album = track.album,
+                    durationMs = track.durationMs,
+                )
+            }
+        }
+    }
+
+    private data class LyricsTrackQuery(
+        val mediaId: String?,
+        val title: String,
+        val artist: String,
+        val album: String,
+        val durationMs: Long,
+    )
+
+    fun startWebSettingsServer() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val info = webSettingsServer.start()
+            webSettingsUrl.value = info?.url
+        }
+    }
+
+    fun stopWebSettingsServer() {
+        webSettingsServer.stop()
+        webSettingsUrl.value = null
+    }
+
+    override fun onCleared() {
+        webSettingsServer.stop()
+        super.onCleared()
     }
 
     fun getCachedArtwork(appInfo: AppInfo): AppArtwork? = iconCache.getFromMemory(appInfo)
@@ -297,6 +383,90 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         removeBackground(old)
     }
 
+    private suspend fun saveCustomBackgroundBytes(bytes: ByteArray): Boolean = backgroundLock.withLock {
+        if (bytes.isEmpty() || bytes.size > 20 * 1024 * 1024) return@withLock false
+        val old = preferences.settingsFlow.first().customBackgroundPath
+        val target = withContext(Dispatchers.IO) {
+            File.createTempFile("custom_bg_", ".img", app.filesDir)
+        }
+        var committed = false
+        try {
+            withContext(Dispatchers.IO) {
+                target.writeBytes(bytes)
+            }
+            if (iconCache.loadCustomBackground(target.absolutePath) == null) return@withLock false
+            preferences.setCustomBackgroundPath(target.absolutePath)
+            committed = true
+            removeBackground(old)
+            true
+        } catch (_: IOException) {
+            false
+        } finally {
+            if (!committed) removeBackground(target.absolutePath)
+        }
+    }
+
+    private fun createWebSettingsHandler(): WebSettingsHandler = object : WebSettingsHandler {
+        override suspend fun getSnapshot(): WebSettingsSnapshot {
+            val settings = preferences.settingsFlow.first()
+            val installed = repository.apps.value
+            val hiddenSet = settings.hiddenPackages
+            val pinnedSet = settings.pinnedPackages.toSet()
+            val hiddenApps = installed
+                .filter { it.packageName in hiddenSet }
+                .map { WebAppItem(it.packageName, it.label, isPinned = false) }
+            val visibleApps = installed
+                .filter { it.packageName !in hiddenSet }
+                .map { WebAppItem(it.packageName, it.label, isPinned = it.packageName in pinnedSet) }
+            val key = settings.spicyLyricsApiKey
+            val hint = if (key.length >= 4) "••••${key.takeLast(4)}" else if (key.isNotEmpty()) "••••" else ""
+            return WebSettingsSnapshot(
+                backgroundMode = settings.backgroundMode,
+                hasCustomBackground = !settings.customBackgroundPath.isNullOrBlank(),
+                gridColumns = settings.gridColumns,
+                mediaScreenEnabled = settings.mediaScreenEnabled,
+                mediaAccessGranted = mediaMonitor.state.value.hasAccess,
+                lyricsEnabled = settings.lyricsEnabled,
+                hasSpicyLyricsKey = key.isNotEmpty(),
+                spicyLyricsKeyHint = hint,
+                autoStartHapp = settings.autoStartHapp,
+                hiddenApps = hiddenApps,
+                visibleApps = visibleApps,
+            )
+        }
+
+        override suspend fun updateSettings(patch: WebSettingsPatch): WebSettingsSnapshot {
+            patch.backgroundMode?.let { mode ->
+                if (mode != BackgroundMode.CUSTOM_FILE || !preferences.settingsFlow.first().customBackgroundPath.isNullOrBlank()) {
+                    preferences.setBackgroundMode(mode)
+                }
+            }
+            patch.gridColumns?.let { preferences.setGridColumns(it) }
+            patch.mediaScreenEnabled?.let { preferences.setMediaScreenEnabled(it) }
+            patch.lyricsEnabled?.let { preferences.setLyricsEnabled(it) }
+            patch.spicyLyricsApiKey?.let { preferences.setSpicyLyricsApiKey(it) }
+            if (patch.clearSpicyLyricsKey) {
+                preferences.setSpicyLyricsApiKey("")
+            }
+            patch.autoStartHapp?.let { preferences.setAutoStartHapp(it) }
+            patch.unhidePackage?.let { preferences.unhideApp(it) }
+            patch.hidePackage?.let { preferences.hideApp(it) }
+            patch.togglePinPackage?.let { preferences.togglePin(it) }
+            return getSnapshot()
+        }
+
+        override suspend fun saveCustomBackground(bytes: ByteArray): Boolean =
+            saveCustomBackgroundBytes(bytes)
+
+        override suspend fun clearCustomBackground() {
+            backgroundLock.withLock {
+                val old = preferences.settingsFlow.first().customBackgroundPath
+                preferences.setCustomBackgroundPath(null)
+                removeBackground(old)
+            }
+        }
+    }
+
     private fun editBackground(action: suspend () -> Unit) {
         viewModelScope.launch {
             try {
@@ -321,9 +491,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         settings: LauncherSettings,
         netStatus: NetworkStatus,
         bgBitmap: ImageBitmap?,
-        mediaState: MediaMonitorState,
-        visibility: MediaScreenVisibilityState,
+        bundle: MediaUiBundle,
     ): LauncherUiState {
+        val mediaState = bundle.media
+        val visibility = bundle.visibility
         val byPkg = installed.associateBy { it.packageName }
         val hiddenSet = settings.hiddenPackages
 
@@ -359,6 +530,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             customBackgroundBitmap = bgBitmap,
             networkStatus = netStatus,
             mediaScreenEnabled = settings.mediaScreenEnabled,
+            lyricsEnabled = settings.lyricsEnabled,
+            hasSpicyLyricsKey = settings.spicyLyricsApiKey.isNotBlank(),
+            lyricsState = bundle.lyrics,
+            webSettingsUrl = bundle.webUrl,
             autoStartHapp = settings.autoStartHapp,
             mediaState = mediaState,
             showMediaScreen = showMedia,

@@ -24,6 +24,7 @@ data class MediaSessionInfo(
     val canSkipNext: Boolean,
     val artwork: ImageBitmap? = null,
     val artworkKey: String? = null,
+    val mediaId: String? = null,
 )
 
 @Immutable

@@ -30,6 +30,8 @@ data class LauncherSettings(
     val backgroundMode: BackgroundMode = BackgroundMode.GRADIENT,
     val customBackgroundPath: String? = null,
     val mediaScreenEnabled: Boolean = true,
+    val lyricsEnabled: Boolean = true,
+    val spicyLyricsApiKey: String = "",
     val autoStartHapp: Boolean = true,
     val initializedDefaults: Boolean = false,
 )
@@ -47,6 +49,8 @@ class LauncherPreferences(private val context: Context) {
                 ?: BackgroundMode.GRADIENT,
             customBackgroundPath = prefs[KEY_CUSTOM_BG_PATH]?.takeIf { it.isNotBlank() },
             mediaScreenEnabled = prefs[KEY_MEDIA_SCREEN_ENABLED] ?: true,
+            lyricsEnabled = prefs[KEY_LYRICS_ENABLED] ?: true,
+            spicyLyricsApiKey = prefs[KEY_SPICY_LYRICS_API_KEY].orEmpty(),
             autoStartHapp = prefs[KEY_AUTO_START_HAPP] ?: true,
             initializedDefaults = prefs[KEY_INITIALIZED_DEFAULTS] ?: false,
         )
@@ -127,6 +131,23 @@ class LauncherPreferences(private val context: Context) {
         }
     }
 
+    suspend fun setLyricsEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_LYRICS_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setSpicyLyricsApiKey(apiKey: String) {
+        val trimmed = apiKey.trim()
+        context.dataStore.edit { prefs ->
+            if (trimmed.isEmpty()) {
+                prefs.remove(KEY_SPICY_LYRICS_API_KEY)
+            } else {
+                prefs[KEY_SPICY_LYRICS_API_KEY] = trimmed
+            }
+        }
+    }
+
     suspend fun setAutoStartHapp(enabled: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[KEY_AUTO_START_HAPP] = enabled
@@ -163,6 +184,8 @@ class LauncherPreferences(private val context: Context) {
         val KEY_BG_MODE = stringPreferencesKey("background_mode")
         val KEY_CUSTOM_BG_PATH = stringPreferencesKey("custom_bg_path")
         val KEY_MEDIA_SCREEN_ENABLED = booleanPreferencesKey("media_screen_enabled")
+        val KEY_LYRICS_ENABLED = booleanPreferencesKey("lyrics_enabled")
+        val KEY_SPICY_LYRICS_API_KEY = stringPreferencesKey("spicy_lyrics_api_key")
         val KEY_AUTO_START_HAPP = booleanPreferencesKey("auto_start_happ")
 
         val DEFAULT_PIN_GROUPS = listOf(

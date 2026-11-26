@@ -368,6 +368,8 @@ fun HomeScreen(
                 backgroundMode = uiState.backgroundMode,
                 customBackgroundBitmap = uiState.customBackgroundBitmap,
                 isVisible = uiState.showMediaScreen,
+                lyricsEnabled = uiState.lyricsEnabled,
+                lyricsState = uiState.lyricsState,
                 onTogglePlayPause = onToggleMediaPlayPause,
                 onSkipPrevious = onSkipMediaPrevious,
                 onSkipNext = onSkipMediaNext,
