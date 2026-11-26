@@ -31,12 +31,18 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.KeyEventType
@@ -98,6 +104,21 @@ fun HomeScreen(
             lastMedia = uiState.mediaState.activeMedia
         } else if (mediaProgress == 0f) {
             lastMedia = null
+        }
+    }
+
+    val playingArtwork = uiState.mediaState.activeMedia?.takeIf { it.isPlaying }?.artwork
+    var lastGlowArtwork by remember { mutableStateOf(playingArtwork) }
+    val glowAlpha by animateFloatAsState(
+        targetValue = if (playingArtwork != null) 1f else 0f,
+        animationSpec = tween(durationMillis = 500),
+        label = "home_warp_glow_alpha",
+    )
+    LaunchedEffect(playingArtwork, glowAlpha) {
+        if (playingArtwork != null) {
+            lastGlowArtwork = playingArtwork
+        } else if (glowAlpha == 0f) {
+            lastGlowArtwork = null
         }
     }
 
@@ -191,6 +212,39 @@ fun HomeScreen(
             customBitmap = uiState.customBackgroundBitmap,
         )
 
+        val glowArtwork = playingArtwork ?: lastGlowArtwork
+        if (glowArtwork != null && glowAlpha > 0f) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(240.dp)
+                    .graphicsLayer {
+                        alpha = glowAlpha * 0.55f
+                        compositingStrategy = CompositingStrategy.Offscreen
+                    }
+                    .drawWithContent {
+                        drawContent()
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                0f to Color.White,
+                                0.5f to Color.White.copy(alpha = 0.45f),
+                                1f to Color.Transparent,
+                            ),
+                            blendMode = BlendMode.DstIn,
+                        )
+                    },
+            ) {
+                WarpedArtwork(
+                    artwork = glowArtwork,
+                    animate = !uiState.showMediaScreen && playingArtwork != null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .blur(72.dp, edgeTreatment = BlurredEdgeTreatment.Rectangle),
+                )
+            }
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -263,7 +317,7 @@ fun HomeScreen(
                         }
                     }
                 }
-                .padding(horizontal = 48.dp, vertical = 32.dp),
+                .padding(start = 48.dp, top = 32.dp, end = 48.dp),
         ) {
             StatusBar(
                 networkStatus = uiState.networkStatus,
