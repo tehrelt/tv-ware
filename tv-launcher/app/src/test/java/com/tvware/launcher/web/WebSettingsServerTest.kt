@@ -1,6 +1,7 @@
 package com.tvware.launcher.web
 
 import com.tvware.launcher.data.BackgroundMode
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -10,9 +11,11 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.net.HttpURLConnection
+import java.net.Socket
 import java.net.URL
 
 class WebSettingsServerTest {
@@ -140,6 +143,55 @@ class WebSettingsServerTest {
             assertEquals(200, deleteConn.responseCode)
             assertTrue(clearedBg)
             deleteConn.disconnect()
+        } finally {
+            server.stop()
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun idleClientTimeoutDoesNotCrashServer() {
+        var uncaught: Throwable? = null
+        val handler = CoroutineExceptionHandler { _, throwable -> uncaught = throwable }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + handler)
+        val snapshot = WebSettingsSnapshot(
+            backgroundMode = BackgroundMode.GRADIENT,
+            hasCustomBackground = false,
+            gridColumns = 5,
+            mediaScreenEnabled = true,
+            mediaAccessGranted = true,
+            lyricsEnabled = true,
+            hasSpicyLyricsKey = false,
+            spicyLyricsKeyHint = "",
+            autoStartHapp = true,
+            hiddenApps = emptyList(),
+            visibleApps = emptyList(),
+        )
+        val server = WebSettingsServer(
+            scope = scope,
+            preferredPort = 0,
+            hostAddressProvider = { "127.0.0.1" },
+            socketTimeoutMs = 100,
+            handler = object : WebSettingsHandler {
+                override suspend fun getSnapshot(): WebSettingsSnapshot = snapshot
+                override suspend fun updateSettings(patch: WebSettingsPatch): WebSettingsSnapshot = snapshot
+                override suspend fun saveCustomBackground(bytes: ByteArray): Boolean = false
+                override suspend fun clearCustomBackground() = Unit
+            },
+        )
+
+        try {
+            val info = server.start()
+            assertNotNull(info)
+            Socket("127.0.0.1", info!!.port).use {
+                Thread.sleep(250)
+            }
+            assertNull(uncaught)
+
+            val conn = (URL("http://127.0.0.1:${info.port}/api/state?t=${info.token}").openConnection() as HttpURLConnection)
+            assertEquals(200, conn.responseCode)
+            conn.disconnect()
+            assertNull(uncaught)
         } finally {
             server.stop()
             scope.cancel()
