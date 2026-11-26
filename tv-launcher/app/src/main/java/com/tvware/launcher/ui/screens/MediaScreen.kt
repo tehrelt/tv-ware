@@ -11,6 +11,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -20,6 +21,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -66,6 +68,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TransformOrigin
@@ -86,6 +89,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
@@ -108,6 +112,18 @@ import com.tvware.launcher.data.formatMediaDuration
 import com.tvware.launcher.ui.components.NetworkStatusIndicator
 import com.tvware.launcher.ui.theme.LauncherColors
 import kotlinx.coroutines.delay
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.sin
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.sin
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.sin
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.sin
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -276,10 +292,10 @@ fun MediaScreen(
                         .fillMaxWidth()
                         .weight(1f),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(48.dp),
+                    horizontalArrangement = Arrangement.spacedBy(56.dp),
                 ) {
                     Column(
-                        modifier = Modifier.weight(0.44f),
+                        modifier = Modifier.weight(0.42f),
                         verticalArrangement = Arrangement.Center,
                     ) {
                         MediaArtworkCard(
@@ -289,59 +305,45 @@ fun MediaScreen(
                             modifier = Modifier.align(Alignment.CenterHorizontally),
                         )
 
-                        Spacer(modifier = Modifier.height(20.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
 
                         Text(
                             text = media.title,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                             style = TextStyle(
-                                fontSize = 26.sp,
+                                fontSize = 24.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                lineHeight = 32.sp,
+                                lineHeight = 30.sp,
                                 color = LauncherColors.TextPrimary,
                             ),
                         )
 
                         if (media.artist.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = media.artist,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 style = TextStyle(
-                                    fontSize = 18.sp,
+                                    fontSize = 16.sp,
                                     fontWeight = FontWeight.Normal,
                                     color = LauncherColors.TextSecondary,
                                 ),
                             )
                         }
 
-                        if (media.album.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = media.album,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                style = TextStyle(
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Normal,
-                                    color = LauncherColors.TextMuted,
-                                ),
-                            )
-                        }
-
                         if (media.durationMs > 0L) {
-                            Spacer(modifier = Modifier.height(18.dp))
+                            Spacer(modifier = Modifier.height(14.dp))
                             MediaProgressSection(
                                 media = media,
                                 isVisible = isVisible,
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(20.dp))
+                        Spacer(modifier = Modifier.height(14.dp))
 
-                        MediaChromeSlot(visible = controlsVisible, height = 60.dp) {
+                        MediaChromeSlot(visible = controlsVisible, height = 56.dp) {
                             MediaControlsRow(
                                 media = media,
                                 isVisible = isVisible && controlsVisible,
@@ -359,7 +361,7 @@ fun MediaScreen(
                         media = media,
                         isVisible = isVisible,
                         modifier = Modifier
-                            .weight(0.56f)
+                            .weight(0.58f)
                             .fillMaxHeight(),
                     )
                 }
@@ -589,10 +591,10 @@ internal fun MediaArtworkCard(
     val cardShape = RoundedCornerShape(20.dp)
     val isWide = artwork != null && artwork.width > artwork.height * 1.25f
     val cardModifier = when {
-        compact && isWide -> Modifier.width(280.dp).aspectRatio(16f / 9f)
-        compact -> Modifier.size(200.dp)
-        isWide -> Modifier.width(360.dp).aspectRatio(16f / 9f)
-        else -> Modifier.size(264.dp)
+        compact && isWide -> Modifier.width(300.dp).aspectRatio(16f / 9f)
+        compact -> Modifier.size(220.dp)
+        isWide -> Modifier.width(400.dp).aspectRatio(16f / 9f)
+        else -> Modifier.size(300.dp)
     }
     Box(
         modifier = modifier
@@ -671,10 +673,27 @@ private fun MediaLyricsPanel(
 
     val activeIndex = findActiveLyricLineIndex(lyrics.lines, currentPosMs, lyrics.syncType)
     val listState = rememberLazyListState()
+    val isSynced = lyrics.syncType != LyricsSyncType.STATIC
+    val anchorIndex = if (activeIndex >= 0) activeIndex else 0
 
     LaunchedEffect(lyrics.trackId, activeIndex) {
-        if (activeIndex >= 0 && activeIndex < lyrics.lines.size) {
-            listState.animateScrollToItem(index = activeIndex, scrollOffset = -140)
+        if (activeIndex in lyrics.lines.indices) {
+            val layoutInfo = listState.layoutInfo
+            val itemInfo = layoutInfo.visibleItemsInfo.firstOrNull { it.index == activeIndex }
+            val viewportHeight = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
+            if (itemInfo != null && viewportHeight > 0) {
+                val targetOffset = (viewportHeight - itemInfo.size) / 2
+                val delta = (itemInfo.offset - targetOffset).toFloat()
+                if (abs(delta) > 1f) {
+                    listState.animateScrollBy(
+                        value = delta,
+                        animationSpec = tween(durationMillis = 480, easing = FastOutSlowInEasing),
+                    )
+                }
+            } else {
+                val fallbackOffset = if (viewportHeight > 0) -(viewportHeight / 3) else -160
+                listState.animateScrollToItem(index = activeIndex, scrollOffset = fallbackOffset)
+            }
         }
     }
 
@@ -687,35 +706,70 @@ private fun MediaLyricsPanel(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            contentPadding = PaddingValues(top = 120.dp, bottom = 160.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
+            contentPadding = PaddingValues(vertical = 220.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             itemsIndexed(
                 items = lyrics.lines,
                 key = { index, line -> "${lyrics.trackId}_${index}_${line.startMs}" },
             ) { index, line ->
                 val isActive = index == activeIndex
+                val distance = abs(index - anchorIndex)
                 val align = if (line.isOppositeAligned) TextAlign.End else TextAlign.Start
-                val targetScale = if (isActive) 1f else 0.82f
+
+                val targetScale = when {
+                    !isSynced -> 0.92f
+                    isActive -> 1f
+                    else -> 0.82f
+                }
                 val scale by animateFloatAsState(
                     targetValue = targetScale,
-                    animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+                    animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
                     label = "lyricScale",
                 )
+
                 val targetAlpha = when {
+                    !isSynced -> 0.82f
                     isActive -> 1f
-                    lyrics.syncType == LyricsSyncType.STATIC -> 0.82f
-                    activeIndex >= 0 && index < activeIndex -> 0.34f
-                    else -> 0.54f
+                    distance == 0 -> 0.65f
+                    distance == 1 -> if (index < anchorIndex) 0.42f else 0.58f
+                    distance == 2 -> if (index < anchorIndex) 0.20f else 0.28f
+                    else -> 0f
                 }
                 val lineAlpha by animateFloatAsState(
                     targetValue = targetAlpha,
-                    animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+                    animationSpec = tween(
+                        durationMillis = if (distance >= 3) 200 else 420,
+                        easing = FastOutSlowInEasing,
+                    ),
                     label = "lyricAlpha",
                 )
-                val scaleModifier = Modifier
+
+                val targetBlur = when {
+                    !isSynced -> 0.dp
+                    isActive -> 0.dp
+                    distance == 0 -> 1.5.dp
+                    distance == 1 -> 4.dp
+                    distance == 2 -> 9.dp
+                    else -> 14.dp
+                }
+                val lineBlur by animateDpAsState(
+                    targetValue = targetBlur,
+                    animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
+                    label = "lyricBlur",
+                )
+
+                val lineModifier = Modifier
                     .fillMaxWidth()
+                    .then(
+                        if (lineBlur > 0.dp) {
+                            Modifier.blur(lineBlur, BlurredEdgeTreatment.Unbounded)
+                        } else {
+                            Modifier
+                        },
+                    )
                     .graphicsLayer {
+                        alpha = lineAlpha
                         scaleX = scale
                         scaleY = scale
                         transformOrigin = TransformOrigin(if (line.isOppositeAligned) 1f else 0f, 0.5f)
@@ -724,14 +778,40 @@ private fun MediaLyricsPanel(
                 if (isActive && lyrics.syncType == LyricsSyncType.SYLLABLE && line.syllables.isNotEmpty()) {
                     val annotated = buildAnnotatedString {
                         line.syllables.forEachIndexed { sylIdx, syl ->
-                            val progress = if (syl.endMs > syl.startMs) {
+                            val rawProgress = if (syl.endMs > syl.startMs) {
                                 ((currentPosMs - syl.startMs).toFloat() / (syl.endMs - syl.startMs).toFloat())
                                     .coerceIn(0f, 1f)
                             } else {
                                 if (currentPosMs >= syl.startMs) 1f else 0f
                             }
-                            val color = LauncherColors.TextPrimary.copy(alpha = 0.42f + 0.58f * progress)
-                            withStyle(SpanStyle(color = color)) {
+                            val progress = rawProgress * rawProgress * (3f - 2f * rawProgress)
+                            val activeGlow = if (rawProgress > 0f && rawProgress < 1f) {
+                                sin(rawProgress * PI).toFloat()
+                            } else {
+                                0f
+                            }
+                            val afterGlow = if (rawProgress >= 1f && syl.endMs > 0L) {
+                                (1f - (currentPosMs - syl.endMs).toFloat() / 280f).coerceIn(0f, 1f)
+                            } else {
+                                0f
+                            }
+                            val effect = maxOf(activeGlow, afterGlow)
+                            val color = LauncherColors.TextPrimary.copy(alpha = 0.26f + 0.74f * progress)
+                            withStyle(
+                                SpanStyle(
+                                    color = color,
+                                    baselineShift = if (effect > 0.01f) BaselineShift(0.055f * effect) else BaselineShift.None,
+                                    shadow = if (effect > 0.01f) {
+                                        Shadow(
+                                            color = Color.White.copy(alpha = 0.7f * effect),
+                                            offset = Offset.Zero,
+                                            blurRadius = 18f * effect,
+                                        )
+                                    } else {
+                                        null
+                                    },
+                                ),
+                            ) {
                                 append(syl.text)
                             }
                             if (!syl.isPartOfWord && sylIdx < line.syllables.lastIndex) {
@@ -743,23 +823,32 @@ private fun MediaLyricsPanel(
                         text = annotated,
                         textAlign = align,
                         style = TextStyle(
-                            fontSize = 28.sp,
+                            fontSize = 26.sp,
                             fontWeight = FontWeight.SemiBold,
-                            lineHeight = 36.sp,
+                            lineHeight = 34.sp,
                         ),
-                        modifier = scaleModifier,
+                        modifier = lineModifier,
                     )
                 } else {
                     Text(
                         text = line.text,
                         textAlign = align,
                         style = TextStyle(
-                            fontSize = 28.sp,
+                            fontSize = 26.sp,
                             fontWeight = FontWeight.SemiBold,
-                            lineHeight = 36.sp,
-                            color = LauncherColors.TextPrimary.copy(alpha = lineAlpha),
+                            lineHeight = 34.sp,
+                            color = LauncherColors.TextPrimary,
+                            shadow = if (isActive) {
+                                Shadow(
+                                    color = Color.White.copy(alpha = 0.35f),
+                                    offset = Offset.Zero,
+                                    blurRadius = 12f,
+                                )
+                            } else {
+                                null
+                            },
                         ),
-                        modifier = scaleModifier,
+                        modifier = lineModifier,
                     )
                 }
             }
