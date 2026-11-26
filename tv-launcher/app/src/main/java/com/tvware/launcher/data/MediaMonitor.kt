@@ -342,6 +342,15 @@ class MediaMonitor(
             cancelArtworkLoad()
         }
 
+        val displayArtwork = cachedArtwork ?: if (
+            artworkKey != null &&
+            currentMedia?.sessionKey == controller.sessionToken.toString()
+        ) {
+            currentMedia.artwork
+        } else {
+            null
+        }
+
         return MediaSessionInfo(
             sessionKey = controller.sessionToken.toString(),
             packageName = pkg,
@@ -358,7 +367,7 @@ class MediaMonitor(
             canPlayPause = canPlayPause,
             canSkipPrevious = canSkipPrevious,
             canSkipNext = canSkipNext,
-            artwork = cachedArtwork,
+            artwork = displayArtwork,
             artworkKey = artworkKey,
             mediaId = trackKey.mediaId,
         )
