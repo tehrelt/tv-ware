@@ -304,17 +304,16 @@ fun MediaScreen(
                     horizontalArrangement = Arrangement.spacedBy(48.dp),
                 ) {
                     Column(
-                        modifier = Modifier.weight(0.35f),
+                        modifier = Modifier.weight(0.32f),
                         verticalArrangement = Arrangement.Center,
                     ) {
                         MediaArtworkCard(
                             artwork = media.artwork,
                             title = media.title,
                             compact = true,
-                            modifier = Modifier.align(Alignment.CenterHorizontally),
                         )
 
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
                         Text(
                             text = media.title,
@@ -374,13 +373,13 @@ fun MediaScreen(
                             media = media,
                             isVisible = isVisible,
                             modifier = Modifier
-                                .weight(0.65f)
+                                .weight(0.68f)
                                 .fillMaxHeight(),
                         )
                     } else {
                         MediaLyricsLoadingPanel(
                             modifier = Modifier
-                                .weight(0.65f)
+                                .weight(0.68f)
                                 .fillMaxHeight(),
                         )
                     }
@@ -495,16 +494,16 @@ internal fun MediaBackdrop(
             animate = animate,
             modifier = Modifier
                 .fillMaxSize()
-                .alpha(0.72f)
+                .alpha(0.60f)
                 .blur(72.dp, edgeTreatment = BlurredEdgeTreatment.Rectangle),
         )
     }
     val scrim = if (artwork != null) {
         Brush.verticalGradient(
             colors = listOf(
-                LauncherColors.BgBlack.copy(alpha = 0.35f),
-                LauncherColors.BgBlack.copy(alpha = 0.57f),
-                LauncherColors.BgBlack.copy(alpha = 0.85f),
+                LauncherColors.BgBlack.copy(alpha = 0.48f),
+                LauncherColors.BgBlack.copy(alpha = 0.68f),
+                LauncherColors.BgBlack.copy(alpha = 0.90f),
             ),
         )
     } else {
@@ -613,8 +612,8 @@ internal fun MediaArtworkCard(
     val cardShape = RoundedCornerShape(20.dp)
     val isWide = artwork != null && artwork.width > artwork.height * 1.25f
     val cardModifier = when {
-        compact && isWide -> Modifier.width(260.dp).aspectRatio(16f / 9f)
-        compact -> Modifier.size(200.dp)
+        compact && isWide -> Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+        compact -> Modifier.fillMaxWidth().aspectRatio(1f)
         isWide -> Modifier.width(400.dp).aspectRatio(16f / 9f)
         else -> Modifier.size(300.dp)
     }
@@ -825,7 +824,7 @@ private fun MediaLyricsPanel(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
+                            .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 8.dp),
                         horizontalArrangement = if (line.isOppositeAligned) {
                             Arrangement.spacedBy(10.dp, Alignment.End)
                         } else {
@@ -894,7 +893,7 @@ private fun MediaLyricsPanel(
                                 null
                             }
 
-                            val fallMs = 340f
+                            val fallMs = 750f
                             val hasWaveTail = rawProgress > 0f &&
                                 (rawProgress < 1f || (syl.endMs > 0L && currentPosMs < syl.endMs + fallMs.toLong()))
 
@@ -904,8 +903,8 @@ private fun MediaLyricsPanel(
                                 } else {
                                     1f + ((currentPosMs - syl.endMs).toFloat() / fallMs).coerceAtLeast(0f)
                                 }
-                                val riseSpan = 0.16f
-                                val fallSpan = 0.42f
+                                val riseSpan = 0.45f
+                                val fallSpan = 1.10f
                                 val sylStartX = layout.getHorizontalPosition(startChar, usePrimaryDirection = true)
                                 val sylEndX = layout.getHorizontalPosition(endChar, usePrimaryDirection = true)
                                 val sylSpanX = (sylEndX - sylStartX).coerceAtLeast(1f)
@@ -971,8 +970,8 @@ private fun MediaLyricsPanel(
                                         (box.left + box.right) * 0.5f,
                                         (layout.getLineTop(lineIdx) + layout.getLineBottom(lineIdx)) * 0.5f,
                                     )
-                                    val radius = (box.right - box.left).coerceAtLeast(16f) * 1.2f
-                                    val glowAlpha = 0.22f * wave * wave
+                                    val radius = (box.right - box.left).coerceAtLeast(16f) * 1.45f
+                                    val glowAlpha = 0.32f * wave * wave
                                     drawCircle(
                                         brush = Brush.radialGradient(
                                             colors = listOf(
@@ -1014,7 +1013,7 @@ private fun MediaLyricsPanel(
                                     val pivotX = (box.left + box.right) * 0.5f
                                     scale(
                                         scaleX = 1f,
-                                        scaleY = 1f + 0.16f * wave,
+                                        scaleY = 1f + 0.13f * wave,
                                         pivot = Offset(pivotX, baselineY),
                                     ) {
                                         clipRect(box.left, top, box.right, bottom) {
