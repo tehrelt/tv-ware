@@ -1,14 +1,18 @@
 package com.tvware.launcher.data
 
-import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.net.InetSocketAddress
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.nio.charset.StandardCharsets
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.thread
 
 class SpicyLyricsTest {
 
@@ -127,31 +131,50 @@ class SpicyLyricsTest {
     @Test
     fun clientSearchesByTitleArtistCachesResultAndHandlesAuthError() = runBlocking {
         val requests = AtomicInteger(0)
-        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        server.createContext("/v1/tracks/search") { ex ->
-            requests.incrementAndGet()
-            assertEquals("Bearer sl_test_key", ex.requestHeaders.getFirst("Authorization"))
-            val body = """{"Status":200,"Body":{"results":[{"id":"4uLU6hMCjMI75M1A2tKUQC"}]}}""".toByteArray()
-            ex.sendResponseHeaders(200, body.size.toLong())
-            ex.responseBody.use { it.write(body) }
-        }
-        server.createContext("/v1/lyrics/4uLU6hMCjMI75M1A2tKUQC") { ex ->
-            requests.incrementAndGet()
-            val auth = ex.requestHeaders.getFirst("Authorization")
-            if (auth == "Bearer bad_key") {
-                ex.sendResponseHeaders(401, -1)
-                ex.close()
-                return@createContext
+        val server = ServerSocket(0, 16, InetAddress.getByName("127.0.0.1"))
+        val worker = thread(isDaemon = true) {
+            while (!server.isClosed) {
+                val socket = runCatching { server.accept() }.getOrNull() ?: break
+                socket.use { client ->
+                    val reader = BufferedReader(InputStreamReader(client.getInputStream(), StandardCharsets.ISO_8859_1))
+                    val requestLine = reader.readLine() ?: return@use
+                    val headers = mutableMapOf<String, String>()
+                    while (true) {
+                        val line = reader.readLine() ?: break
+                        if (line.isEmpty()) break
+                        val idx = line.indexOf(':')
+                        if (idx > 0) {
+                            headers[line.substring(0, idx).trim().lowercase()] = line.substring(idx + 1).trim()
+                        }
+                    }
+                    requests.incrementAndGet()
+                    val path = requestLine.split(' ').getOrNull(1).orEmpty()
+                    val auth = headers["authorization"]
+                    val (status, body) = when {
+                        path.startsWith("/v1/tracks/search") -> {
+                            assertEquals("Bearer sl_test_key", auth)
+                            200 to """{"Status":200,"Body":{"results":[{"id":"4uLU6hMCjMI75M1A2tKUQC"}]}}"""
+                        }
+                        path == "/v1/lyrics/4uLU6hMCjMI75M1A2tKUQC" && auth == "Bearer bad_key" -> {
+                            401 to ""
+                        }
+                        path == "/v1/lyrics/4uLU6hMCjMI75M1A2tKUQC" -> {
+                            200 to """{"Status":200,"Body":{"id":"4uLU6hMCjMI75M1A2tKUQC","Type":"Line","Content":[{"Text":"Never gonna give you up","StartTime":1.0,"EndTime":4.0}]}}"""
+                        }
+                        else -> 404 to ""
+                    }
+                    val bytes = body.toByteArray(StandardCharsets.UTF_8)
+                    val respHeader = "HTTP/1.1 $status OK\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n"
+                    client.getOutputStream().apply {
+                        write(respHeader.toByteArray(StandardCharsets.ISO_8859_1))
+                        if (bytes.isNotEmpty()) write(bytes)
+                        flush()
+                    }
+                }
             }
-            val body = """
-                {"Status":200,"Body":{"id":"4uLU6hMCjMI75M1A2tKUQC","Type":"Line","Content":[{"Text":"Never gonna give you up","StartTime":1.0,"EndTime":4.0}]}}
-            """.trimIndent().toByteArray()
-            ex.sendResponseHeaders(200, body.size.toLong())
-            ex.responseBody.use { it.write(body) }
         }
-        server.start()
         try {
-            val client = SpicyLyricsClient(baseUrl = "http://127.0.0.1:${server.address.port}")
+            val client = SpicyLyricsClient(baseUrl = "http://127.0.0.1:${server.localPort}")
             val first = client.fetchLyrics(
                 apiKey = "sl_test_key",
                 mediaId = null,
@@ -184,7 +207,8 @@ class SpicyLyricsTest {
             )
             assertTrue(unauthorized is LyricsState.Error)
         } finally {
-            server.stop(0)
+            runCatching { server.close() }
+            worker.join(1_000)
         }
     }
 }
