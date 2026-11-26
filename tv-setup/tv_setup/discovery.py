@@ -161,7 +161,7 @@ def get_local_ipv4_interfaces() -> list[tuple[str, str, int]]:
     try:
         result = subprocess.run(
             ["powershell", "-NoProfile", "-Command", _IPV4_COMMAND],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True, text=True, encoding="oem", errors="replace", timeout=5,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         result.check_returncode()

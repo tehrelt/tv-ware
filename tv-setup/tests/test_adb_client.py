@@ -177,6 +177,27 @@ class BootstrapTests(unittest.TestCase):
                 download_platform_tools(self.tools)
         self.assertFalse(list(self.tools.glob("*.zip.part")))
 
+    def test_archive_unlink_failure_logs_warning_and_returns_adb(self):
+        response = io.BytesIO(make_zip(("platform-tools/adb.exe", b"new")))
+        response.headers = {}
+        orig_unlink = Path.unlink
+
+        def fail_part_unlink(path, missing_ok=False):
+            if path.name.endswith(".zip.part"):
+                raise PermissionError("archive locked")
+            return orig_unlink(path, missing_ok=missing_ok)
+
+        with (
+            patch("urllib.request.urlopen", return_value=response),
+            patch.object(Path, "unlink", fail_part_unlink),
+            self.assertLogs("tv_setup.adb_client", level="WARNING") as logs,
+        ):
+            adb = download_platform_tools(self.tools)
+
+        self.assertEqual(adb, self.tools / "platform-tools" / "adb.exe")
+        self.assertEqual(adb.read_bytes(), b"new")
+        self.assertIn("archive locked", "\n".join(logs.output))
+
 
 class AdbClientTests(unittest.TestCase):
     def test_parse_devices_includes_tcp_usb_and_optional_metadata(self):

@@ -12,7 +12,7 @@
 
 ## tv-setup
 
-`tv-setup/` — приложение для Windows 11 (Python 3.12) для настройки Android TV. Команда `tv-setup\run.bat` создаёт виртуальное окружение и устанавливает зависимости. Пока готов только каркас: запуск интерфейса станет доступен после добавления `tv_setup.gui`.
+`tv-setup/` — приложение для Windows 11 (Python 3.12) для настройки Android TV. Команда `tv-setup\run.bat` создаёт виртуальное окружение, при необходимости устанавливает зависимости и запускает графический интерфейс; тесты запускаются командой `python -m unittest discover -s tv-setup\tests -t tv-setup`.
 
 [Спецификация tv-setup](docs/superpowers/specs/2026-11-25-tv-setup-design.md).
 

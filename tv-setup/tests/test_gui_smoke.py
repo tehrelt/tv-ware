@@ -6,8 +6,17 @@ from pathlib import Path
 from unittest.mock import patch
 
 import tv_setup.__main__ as entry_main
+from tv_setup.adb_client import AdbClient
 from tv_setup.discovery import DeviceStatus, DiscoveredDevice
-from tv_setup.gui import PALETTE, TvSetupApp, format_device_label, main, parse_manual_target
+from tv_setup.gui import (
+    PALETTE,
+    TvSetupApp,
+    _ManualIpDialog,
+    _PairingDialog,
+    format_device_label,
+    main,
+    parse_manual_target,
+)
 from tv_setup.installer import LocalApk, SignatureConflictError
 from tv_setup.optimizer import ApplyPlan, ApplyReport, DeviceInspection
 from tv_setup.presets import ANIMATION_KEYS, BLOAT_CATALOG, LAUNCHER_PACKAGE
@@ -292,6 +301,108 @@ class GuiSmokeTests(unittest.TestCase):
                     app._handle_manual_connect("192.168.31.42", 5555, False, None, "")
                     connect_mock.assert_called_once_with("192.168.31.42:5555")
                     pair_mock.assert_not_called()
+
+    def test_modal_dialogs_fit_requested_size_and_refit_on_error(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+
+        with patch("tv_setup.gui.find_adb_executable", return_value=Path("adb.exe")):
+            app = TvSetupApp(
+                tools_dir=root / "tools",
+                apks_dir=root / "apks",
+                state_dir=root / "state",
+                auto_discover=False,
+            )
+            app.withdraw()
+            self.addCleanup(app.destroy)
+
+            device = DiscoveredDevice(
+                "192.168.31.88", "MiBox", "192.168.31.88", None, 39999, DeviceStatus.NEEDS_PAIRING, "mdns", None,
+            )
+            pairing = _PairingDialog(app, device, lambda _code, _port: None)
+            pairing.withdraw()
+            self.addCleanup(lambda: pairing.winfo_exists() and pairing.destroy())
+            pairing.update_idletasks()
+            self.assertGreaterEqual(pairing.winfo_width(), pairing.winfo_reqwidth())
+            self.assertGreaterEqual(pairing.winfo_height(), pairing.winfo_reqheight())
+            pairing._show_error("Строка 1\nСтрока 2\nСтрока 3\nСтрока 4\nСтрока 5")
+            pairing.update_idletasks()
+            self.assertGreaterEqual(pairing.winfo_width(), pairing.winfo_reqwidth())
+            self.assertGreaterEqual(pairing.winfo_height(), pairing.winfo_reqheight())
+            pairing.destroy()
+
+            manual = _ManualIpDialog(app, lambda *_args: None)
+            manual.withdraw()
+            self.addCleanup(lambda: manual.winfo_exists() and manual.destroy())
+            manual.update_idletasks()
+            self.assertGreaterEqual(manual.winfo_width(), manual.winfo_reqwidth())
+            self.assertGreaterEqual(manual.winfo_height(), manual.winfo_reqheight())
+            manual._show_error("Строка 1\nСтрока 2\nСтрока 3\nСтрока 4\nСтрока 5")
+            manual.update_idletasks()
+            self.assertGreaterEqual(manual.winfo_width(), manual.winfo_reqwidth())
+            self.assertGreaterEqual(manual.winfo_height(), manual.winfo_reqheight())
+            manual.destroy()
+
+    def test_start_download_apks_refreshes_list_on_partial_failure(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        apks_dir = root / "apks"
+        apks_dir.mkdir()
+
+        with patch("tv_setup.gui.find_adb_executable", return_value=Path("adb.exe")):
+            app = TvSetupApp(
+                tools_dir=root / "tools",
+                apks_dir=apks_dir,
+                state_dir=root / "state",
+                auto_discover=False,
+            )
+            app.withdraw()
+            self.addCleanup(app.destroy)
+
+            def partial_download(target_dir, progress_cb=None, log_cb=None):
+                (target_dir / "tv-launcher.apk").write_bytes(b"apk")
+                raise RuntimeError("Happ download failed")
+
+            def run_sync(target):
+                with self.assertRaisesRegex(RuntimeError, "Happ download failed"):
+                    target()
+                return True
+
+            with (
+                patch.object(app, "_start_worker", side_effect=run_sync),
+                patch.object(app, "_ui_call", side_effect=lambda fn: fn()),
+                patch("tv_setup.gui.download_repo_apks", side_effect=partial_download),
+            ):
+                app.start_download_apks()
+
+            self.assertIn("tv-launcher.apk", app._apk_vars)
+
+    def test_refresh_adb_status_clears_stale_adb_path(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        stale_adb = root / "deleted" / "adb.exe"
+
+        with patch("tv_setup.gui.find_adb_executable", return_value=None):
+            app = TvSetupApp(
+                tools_dir=root / "tools",
+                apks_dir=root / "apks",
+                state_dir=root / "state",
+                adb_client=AdbClient(adb_path=stale_adb, tools_dir=root / "tools"),
+                auto_discover=False,
+            )
+            app.withdraw()
+            self.addCleanup(app.destroy)
+
+            self.assertIsNone(app.adb.adb_path)
+            self.assertTrue(app._download_adb_btn.winfo_manager())
+
+            app.adb.adb_path = stale_adb
+            app._refresh_adb_status()
+            self.assertIsNone(app.adb.adb_path)
+            self.assertTrue(app._download_adb_btn.winfo_manager())
 
 
 if __name__ == "__main__":

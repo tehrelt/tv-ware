@@ -146,7 +146,10 @@ def download_platform_tools(
             _cleanup_directory(staging)
         return tools_dir / _ADB_RELATIVE_PATH
     finally:
-        archive_path.unlink(missing_ok=True)
+        try:
+            archive_path.unlink(missing_ok=True)
+        except OSError as exc:
+            logging.getLogger(__name__).warning("Could not remove temporary archive %s: %s", archive_path, exc)
 
 
 def parse_adb_devices(output: str) -> list[UsbOrTcpDevice]:

@@ -102,6 +102,8 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(cmd[:3], ["powershell", "-NoProfile", "-Command"])
         self.assertEqual(cmd[3], "Get-NetIPAddress -AddressFamily IPv4 | Select-Object InterfaceAlias,IPAddress,PrefixLength | ConvertTo-Json")
         self.assertEqual(run.call_args.kwargs["timeout"], 5)
+        self.assertEqual(run.call_args.kwargs["encoding"], "oem")
+        self.assertEqual(run.call_args.kwargs["errors"], "replace")
         self.assertEqual(run.call_args.kwargs["creationflags"], getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
     def test_tls_ready_at_another_port_wins_over_unauthorized_legacy(self):

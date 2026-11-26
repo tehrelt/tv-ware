@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+import math
 import queue
 import re
 import threading
@@ -136,13 +137,26 @@ def _add_dialog_buttons(parent: ctk.CTkFrame, submit_text: str, on_submit: Calla
     ctk.CTkButton(row, text="Отмена", width=90, command=on_cancel, **_BTN_SURFACE).pack(side="right")
 
 
+def _fit_dialog_size(
+    dialog: ctk.CTkToplevel, min_width: int, min_height: int, force_resizable: bool = False,
+) -> None:
+    dialog.update_idletasks()
+    scale = dialog._get_window_scaling() or 1.0
+    width = max(min_width, math.ceil(dialog.winfo_reqwidth() / scale) + 24)
+    height = max(min_height, math.ceil(dialog.winfo_reqheight() / scale) + 24)
+    dialog.geometry(f"{width}x{height}")
+    dialog.minsize(width, height)
+    if force_resizable:
+        dialog.resizable(True, True)
+
+
 class _PairingDialog(ctk.CTkToplevel):
+    _MIN_SIZE = (380, 250)
+
     def __init__(self, parent: TvSetupApp, device: DiscoveredDevice, on_submit: Callable[[str, int | None], None]) -> None:
         super().__init__(parent, fg_color=PALETTE["bg"])
         self._on_submit = on_submit
         self.title("Сопряжение по коду")
-        self.geometry("380x250")
-        self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
 
@@ -161,31 +175,38 @@ class _PairingDialog(ctk.CTkToplevel):
         self._error_label = ctk.CTkLabel(card, text="", text_color=PALETTE["danger"], font=ctk.CTkFont(size=11))
         self._error_label.pack(anchor="w", padx=14)
         _add_dialog_buttons(card, "Сопрячь и подключить", self._submit, self.destroy)
+        _fit_dialog_size(self, *self._MIN_SIZE, force_resizable=True)
         self._code_entry.focus_set()
         self.bind("<Return>", lambda _event: self._submit())
+
+    def _show_error(self, message: str) -> None:
+        self._error_label.configure(text=message)
+        self.update_idletasks()
+        if self.winfo_height() < self.winfo_reqheight() or self.winfo_width() < self.winfo_reqwidth():
+            _fit_dialog_size(self, *self._MIN_SIZE, force_resizable=(self.state() == "withdrawn"))
 
     def _submit(self) -> None:
         code = self._code_entry.get().strip()
         if not code:
-            self._error_label.configure(text="Введите код сопряжения")
+            self._show_error("Введите код сопряжения")
             return
         raw_port = self._port_entry.get().strip()
         try:
             connect_port = parse_port(raw_port) if raw_port else None
         except ValueError as exc:
-            self._error_label.configure(text=str(exc))
+            self._show_error(str(exc))
             return
         self.destroy()
         self._on_submit(code, connect_port)
 
 
 class _ManualIpDialog(ctk.CTkToplevel):
+    _MIN_SIZE = (400, 310)
+
     def __init__(self, parent: TvSetupApp, on_submit: Callable[[str, int, bool, int | None, str], None]) -> None:
         super().__init__(parent, fg_color=PALETTE["bg"])
         self._on_submit = on_submit
         self.title("Подключение по IP")
-        self.geometry("400x310")
-        self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
 
@@ -199,8 +220,15 @@ class _ManualIpDialog(ctk.CTkToplevel):
         self._error_label = ctk.CTkLabel(card, text="", text_color=PALETTE["danger"], font=ctk.CTkFont(size=11))
         self._error_label.pack(anchor="w", padx=14)
         _add_dialog_buttons(card, "Подключить", self._submit, self.destroy)
+        _fit_dialog_size(self, *self._MIN_SIZE, force_resizable=True)
         self._target_entry.focus_set()
         self.bind("<Return>", lambda _event: self._submit())
+
+    def _show_error(self, message: str) -> None:
+        self._error_label.configure(text=message)
+        self.update_idletasks()
+        if self.winfo_height() < self.winfo_reqheight() or self.winfo_width() < self.winfo_reqwidth():
+            _fit_dialog_size(self, *self._MIN_SIZE, force_resizable=(self.state() == "withdrawn"))
 
     def _submit(self) -> None:
         try:
@@ -208,14 +236,14 @@ class _ManualIpDialog(ctk.CTkToplevel):
             raw_pair_port = self._pair_port_entry.get().strip()
             pair_port = parse_port(raw_pair_port) if raw_pair_port else None
         except ValueError as exc:
-            self._error_label.configure(text=str(exc))
+            self._show_error(str(exc))
             return
         code = self._code_entry.get().strip()
         if pair_port is not None and not code:
-            self._error_label.configure(text="Введите код сопряжения")
+            self._show_error("Введите код сопряжения")
             return
         if code and pair_port is None and not has_explicit_port:
-            self._error_label.configure(text="Укажите порт сопряжения")
+            self._show_error("Укажите порт сопряжения")
             return
         self.destroy()
         self._on_submit(host, port, has_explicit_port, pair_port, code)
@@ -512,8 +540,8 @@ class TvSetupApp(ctk.CTk):
 
     def _refresh_adb_status(self) -> None:
         found = self.adb.adb_path if self.adb.adb_path and self.adb.adb_path.is_file() else find_adb_executable(self.tools_dir)
+        self.adb.adb_path = found
         if found is not None:
-            self.adb.adb_path = found
             self._adb_status_label.configure(text="ADB: готов", text_color=PALETTE["success"])
             if self._download_adb_btn.winfo_manager():
                 self._download_adb_btn.pack_forget()
@@ -766,12 +794,14 @@ class TvSetupApp(ctk.CTk):
     def start_download_apks(self) -> None:
         def worker() -> None:
             self._log("Загрузка актуальных APK из GitHub Releases...")
-            download_repo_apks(
-                self.apks_dir,
-                progress_cb=lambda _key, done, total: self._update_progress(done, total),
-                log_cb=self._log,
-            )
-            self._ui_call(self._refresh_apk_list)
+            try:
+                download_repo_apks(
+                    self.apks_dir,
+                    progress_cb=lambda _key, done, total: self._update_progress(done, total),
+                    log_cb=self._log,
+                )
+            finally:
+                self._ui_call(self._refresh_apk_list)
             self._log("Список APK обновлён")
 
         self._start_worker(worker)
