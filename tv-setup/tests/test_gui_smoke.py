@@ -248,6 +248,51 @@ class GuiSmokeTests(unittest.TestCase):
             entry_main.main()
             gui_main.assert_called_once_with()
 
+    def test_handle_manual_connect_resolves_connect_port_and_direct_connect(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+
+        with patch("tv_setup.gui.find_adb_executable", return_value=Path("adb.exe")):
+            app = TvSetupApp(
+                tools_dir=root / "tools",
+                apks_dir=root / "apks",
+                state_dir=root / "state",
+                auto_discover=False,
+            )
+            app.withdraw()
+            self.addCleanup(app.destroy)
+
+            with (
+                patch.object(app, "_start_pair_and_connect") as pair_mock,
+                patch.object(app, "_start_connect") as connect_mock,
+            ):
+                with self.subTest("ip_without_explicit_port_and_pair_port_uses_mdns"):
+                    app._handle_manual_connect("192.168.31.42", 5555, False, 37123, "123456")
+                    pair_mock.assert_called_once_with("192.168.31.42", 37123, "123456", None)
+                    connect_mock.assert_not_called()
+
+                pair_mock.reset_mock()
+                connect_mock.reset_mock()
+                with self.subTest("ip_with_explicit_port_and_pair_port_uses_explicit_port"):
+                    app._handle_manual_connect("192.168.31.42", 41234, True, 37123, "123456")
+                    pair_mock.assert_called_once_with("192.168.31.42", 37123, "123456", 41234)
+                    connect_mock.assert_not_called()
+
+                pair_mock.reset_mock()
+                connect_mock.reset_mock()
+                with self.subTest("ip_with_explicit_pairing_port_only_uses_mdns"):
+                    app._handle_manual_connect("192.168.31.42", 37123, True, None, "123456")
+                    pair_mock.assert_called_once_with("192.168.31.42", 37123, "123456", None)
+                    connect_mock.assert_not_called()
+
+                pair_mock.reset_mock()
+                connect_mock.reset_mock()
+                with self.subTest("ip_without_code_connects_directly"):
+                    app._handle_manual_connect("192.168.31.42", 5555, False, None, "")
+                    connect_mock.assert_called_once_with("192.168.31.42:5555")
+                    pair_mock.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

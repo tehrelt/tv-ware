@@ -700,7 +700,7 @@ class TvSetupApp(ctk.CTk):
     def _handle_manual_connect(self, host: str, port: int, has_explicit_port: bool, pair_port: int | None, code: str) -> None:
         if code:
             actual_pair_port = pair_port if pair_port is not None else port
-            connect_port = port if pair_port is not None else (None if has_explicit_port else 5555)
+            connect_port = port if (pair_port is not None and has_explicit_port) else None
             self._start_pair_and_connect(host, actual_pair_port, code, connect_port)
         else:
             self._start_connect(f"{host}:{port}")
