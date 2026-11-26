@@ -894,7 +894,7 @@ private fun MediaLyricsPanel(
                                 null
                             }
 
-                            val fallMs = 560f
+                            val fallMs = 340f
                             val hasWaveTail = rawProgress > 0f &&
                                 (rawProgress < 1f || (syl.endMs > 0L && currentPosMs < syl.endMs + fallMs.toLong()))
 
@@ -904,8 +904,8 @@ private fun MediaLyricsPanel(
                                 } else {
                                     1f + ((currentPosMs - syl.endMs).toFloat() / fallMs).coerceAtLeast(0f)
                                 }
-                                val riseSpan = 0.28f
-                                val fallSpan = 1.15f
+                                val riseSpan = 0.16f
+                                val fallSpan = 0.42f
                                 val sylStartX = layout.getHorizontalPosition(startChar, usePrimaryDirection = true)
                                 val sylEndX = layout.getHorizontalPosition(endChar, usePrimaryDirection = true)
                                 val sylSpanX = (sylEndX - sylStartX).coerceAtLeast(1f)
@@ -962,6 +962,30 @@ private fun MediaLyricsPanel(
                             if (layout == null || wavingChars.isEmpty()) {
                                 drawContent()
                                 return@drawWithContent
+                            }
+                            wavingChars.forEach { (charIdx, wave) ->
+                                if (charIdx < layout.layoutInput.text.length) {
+                                    val lineIdx = layout.getLineForOffset(charIdx)
+                                    val box = layout.getBoundingBox(charIdx)
+                                    val center = Offset(
+                                        (box.left + box.right) * 0.5f,
+                                        (layout.getLineTop(lineIdx) + layout.getLineBottom(lineIdx)) * 0.5f,
+                                    )
+                                    val radius = (box.right - box.left).coerceAtLeast(16f) * 1.2f
+                                    val glowAlpha = 0.22f * wave * wave
+                                    drawCircle(
+                                        brush = Brush.radialGradient(
+                                            colors = listOf(
+                                                Color.White.copy(alpha = glowAlpha),
+                                                Color.Transparent,
+                                            ),
+                                            center = center,
+                                            radius = radius,
+                                        ),
+                                        radius = radius,
+                                        center = center,
+                                    )
+                                }
                             }
                             drawContext.canvas.save()
                             wavingChars.forEach { (charIdx, _) ->
