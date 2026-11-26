@@ -3,10 +3,9 @@ import threading
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import tv_setup.__main__ as entry_main
-from tv_setup.adb_client import AdbError, AdbResult
 from tv_setup.discovery import DeviceStatus, DiscoveredDevice
 from tv_setup.gui import PALETTE, TvSetupApp, format_device_label, main, parse_manual_target
 from tv_setup.installer import LocalApk, SignatureConflictError
