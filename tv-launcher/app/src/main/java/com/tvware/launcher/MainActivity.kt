@@ -2,6 +2,7 @@ package com.tvware.launcher
 
 import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
@@ -112,6 +113,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        handleDebugIntent(intent)
     }
 
     override fun onResume() {
@@ -131,6 +133,17 @@ class MainActivity : ComponentActivity() {
             isSettingsOpen = false
             closeOverlays?.invoke()
             model.onLauncherResumed(allowAutoShow = true)
+        }
+        handleDebugIntent(intent)
+    }
+
+    private fun handleDebugIntent(intent: Intent?) {
+        if ((applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) == 0) return
+        if (intent?.action == "com.tvware.launcher.DEBUG_MEDIA_PREVIEW") {
+            val enabled = intent.getBooleanExtra("enabled", true)
+            val posMs = intent.getLongExtra("position_ms", 12_000L)
+            val isPlaying = intent.getBooleanExtra("is_playing", true)
+            model.setDebugMediaPreview(enabled = enabled, positionMs = posMs, isPlaying = isPlaying)
         }
     }
 

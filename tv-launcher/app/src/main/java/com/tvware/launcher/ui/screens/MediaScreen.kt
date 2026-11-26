@@ -708,8 +708,9 @@ private fun MediaLyricsPanel(
             }
             val viewportHeight = layoutInfo.viewportSize.height
             if (itemInfo != null && viewportHeight > 0) {
-                val targetOffset = (viewportHeight - itemInfo.size) / 2
-                val delta = (itemInfo.offset - targetOffset).toFloat()
+                val itemTopInViewport = itemInfo.offset - layoutInfo.viewportStartOffset
+                val targetTopInViewport = (viewportHeight - itemInfo.size) / 2
+                val delta = (itemTopInViewport - targetTopInViewport).toFloat()
                 if (abs(delta) > 1f) {
                     listState.animateScrollBy(
                         value = delta,

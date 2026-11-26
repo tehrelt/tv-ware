@@ -1,11 +1,17 @@
 package com.tvware.launcher.ui
 
 import android.app.Application
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.Shader
 import android.net.Uri
 import android.os.SystemClock
 import android.widget.Toast
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.tvware.launcher.LauncherApp
@@ -13,10 +19,15 @@ import com.tvware.launcher.data.AppArtwork
 import com.tvware.launcher.data.AppInfo
 import com.tvware.launcher.data.BackgroundMode
 import com.tvware.launcher.data.LauncherSettings
+import com.tvware.launcher.data.LyricLine
+import com.tvware.launcher.data.LyricSyllable
+import com.tvware.launcher.data.LyricsData
 import com.tvware.launcher.data.LyricsState
+import com.tvware.launcher.data.LyricsSyncType
 import com.tvware.launcher.data.MediaMonitorState
 import com.tvware.launcher.data.MediaScreenReducer
 import com.tvware.launcher.data.MediaScreenVisibilityState
+import com.tvware.launcher.data.MediaSessionInfo
 import com.tvware.launcher.data.NetworkStatus
 import com.tvware.launcher.data.SpicyLyricsClient
 import com.tvware.launcher.data.shouldAutoStartHapp
@@ -80,6 +91,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val mediaVisibility = MutableStateFlow(MediaScreenVisibilityState())
     private val lyricsState = MutableStateFlow<LyricsState>(LyricsState.Idle)
     private val webSettingsUrl = MutableStateFlow<String?>(null)
+    private val debugMediaOverride = MutableStateFlow<Pair<MediaMonitorState, LyricsState>?>(null)
     private val spicyLyricsClient = SpicyLyricsClient()
     private val webSettingsServer = WebSettingsServer(
         scope = viewModelScope,
@@ -100,8 +112,23 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         preferences.settingsFlow,
         networkMonitor.status,
         customBgBitmap,
-        combine(mediaMonitor.state, mediaVisibility, lyricsState, webSettingsUrl) { media, visibility, lyrics, webUrl ->
-            MediaUiBundle(media, visibility, lyrics, webUrl)
+        combine(
+            mediaMonitor.state,
+            mediaVisibility,
+            lyricsState,
+            webSettingsUrl,
+            debugMediaOverride,
+        ) { media, visibility, lyrics, webUrl, debugOverride ->
+            if (debugOverride != null) {
+                MediaUiBundle(
+                    media = debugOverride.first,
+                    visibility = visibility.copy(isVisible = true),
+                    lyrics = debugOverride.second,
+                    webUrl = webUrl,
+                )
+            } else {
+                MediaUiBundle(media, visibility, lyrics, webUrl)
+            }
         },
     ) { installed, settings, netStatus, bgBitmap, bundle ->
         buildUiState(installed, settings, netStatus, bgBitmap, bundle)
@@ -484,6 +511,152 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             val file = path?.let(::File)
             if (file?.parentFile == app.filesDir && file.name.startsWith("custom_bg")) file.delete()
         }
+    }
+
+    fun setDebugMediaPreview(
+        enabled: Boolean,
+        positionMs: Long = 12_000L,
+        isPlaying: Boolean = true,
+    ) {
+        if (!enabled) {
+            debugMediaOverride.value = null
+            return
+        }
+        val artwork = createDebugArtwork()
+        val now = SystemClock.elapsedRealtime()
+        val media = MediaSessionInfo(
+            sessionKey = "debug_preview",
+            packageName = "com.spotify.tv.android",
+            appLabel = "Spotify",
+            title = "See You Again (feat. Kali Uchis)",
+            artist = "Tyler, The Creator",
+            album = "Flower Boy",
+            isPlaying = isPlaying,
+            isPaused = !isPlaying,
+            durationMs = 180_000L,
+            positionMs = positionMs,
+            playbackSpeed = 1f,
+            positionUpdateTimeMs = now,
+            canPlayPause = true,
+            canSkipPrevious = true,
+            canSkipNext = true,
+            artwork = artwork,
+            artworkKey = "debug_artwork",
+        )
+        val lines = listOf(
+            LyricLine(
+                text = "Okay, okay, okay, okay",
+                startMs = 4_000L,
+                endMs = 7_000L,
+                syllables = listOf(
+                    LyricSyllable("Okay,", false, 4_000L, 4_700L),
+                    LyricSyllable("okay,", false, 4_750L, 5_450L),
+                    LyricSyllable("okay,", false, 5_500L, 6_200L),
+                    LyricSyllable("okay", false, 6_250L, 7_000L),
+                ),
+            ),
+            LyricLine(
+                text = "You live in my dream state",
+                startMs = 7_200L,
+                endMs = 10_200L,
+                syllables = listOf(
+                    LyricSyllable("You", false, 7_200L, 7_600L),
+                    LyricSyllable("live", false, 7_650L, 8_100L),
+                    LyricSyllable("in", false, 8_150L, 8_450L),
+                    LyricSyllable("my", false, 8_500L, 8_900L),
+                    LyricSyllable("dream", false, 8_950L, 9_550L),
+                    LyricSyllable("state", false, 9_600L, 10_200L),
+                ),
+            ),
+            LyricLine(
+                text = "Relocate my fantasy",
+                startMs = 10_400L,
+                endMs = 13_400L,
+                syllables = listOf(
+                    LyricSyllable("Re", true, 10_400L, 10_750L),
+                    LyricSyllable("lo", true, 10_750L, 11_100L),
+                    LyricSyllable("cate", false, 11_100L, 11_600L),
+                    LyricSyllable("my", false, 11_650L, 12_050L),
+                    LyricSyllable("fan", true, 12_100L, 12_500L),
+                    LyricSyllable("ta", true, 12_500L, 12_900L),
+                    LyricSyllable("sy", false, 12_900L, 13_400L),
+                ),
+            ),
+            LyricLine(
+                text = "I stay in reality",
+                startMs = 13_600L,
+                endMs = 16_400L,
+                syllables = listOf(
+                    LyricSyllable("I", false, 13_600L, 14_000L),
+                    LyricSyllable("stay", false, 14_050L, 14_600L),
+                    LyricSyllable("in", false, 14_650L, 15_000L),
+                    LyricSyllable("re", true, 15_050L, 15_400L),
+                    LyricSyllable("al", true, 15_400L, 15_750L),
+                    LyricSyllable("i", true, 15_750L, 16_050L),
+                    LyricSyllable("ty", false, 16_050L, 16_400L),
+                ),
+            ),
+            LyricLine(
+                text = "You exist behind my eyelids, my eyelids",
+                startMs = 20_000L,
+                endMs = 24_000L,
+                syllables = listOf(
+                    LyricSyllable("You", false, 20_000L, 20_400L),
+                    LyricSyllable("ex", true, 20_450L, 20_800L),
+                    LyricSyllable("ist", false, 20_800L, 21_200L),
+                    LyricSyllable("be", true, 21_250L, 21_550L),
+                    LyricSyllable("hind", false, 21_550L, 21_950L),
+                    LyricSyllable("my", false, 22_000L, 22_350L),
+                    LyricSyllable("eye", true, 22_400L, 22_800L),
+                    LyricSyllable("lids,", false, 22_800L, 23_200L),
+                    LyricSyllable("my", false, 23_250L, 23_550L),
+                    LyricSyllable("eyelids", false, 23_600L, 24_000L),
+                ),
+            ),
+            LyricLine(
+                text = "Now I don't wanna wake up",
+                startMs = 24_200L,
+                endMs = 27_500L,
+            ),
+            LyricLine(
+                text = "20/20, 20/20 vision",
+                startMs = 27_700L,
+                endMs = 31_000L,
+            ),
+            LyricLine(
+                text = "Cupid hit me, Cupid hit me with precision",
+                startMs = 31_200L,
+                endMs = 35_000L,
+            ),
+        )
+        val lyrics = LyricsState.Ready(
+            LyricsData(
+                trackId = "debug_track",
+                syncType = LyricsSyncType.SYLLABLE,
+                lines = lines,
+                source = "spicy_lyrics",
+                attribution = "Spicy Lyrics · @debug",
+            ),
+        )
+        debugMediaOverride.value = MediaMonitorState(hasAccess = true, activeMedia = media) to lyrics
+    }
+
+    private fun createDebugArtwork(): ImageBitmap {
+        val bmp = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val paint = Paint().apply {
+            shader = LinearGradient(
+                0f,
+                0f,
+                256f,
+                256f,
+                intArrayOf(0xFFE89B3C.toInt(), 0xFF3B5998.toInt(), 0xFF1E2A4A.toInt()),
+                null,
+                Shader.TileMode.CLAMP,
+            )
+        }
+        canvas.drawRect(0f, 0f, 256f, 256f, paint)
+        return bmp.asImageBitmap()
     }
 
     private fun buildUiState(
