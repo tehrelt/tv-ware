@@ -296,10 +296,10 @@ fun MediaScreen(
                         .fillMaxWidth()
                         .weight(1f),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(56.dp),
+                    horizontalArrangement = Arrangement.spacedBy(48.dp),
                 ) {
                     Column(
-                        modifier = Modifier.weight(0.42f),
+                        modifier = Modifier.weight(0.35f),
                         verticalArrangement = Arrangement.Center,
                     ) {
                         MediaArtworkCard(
@@ -369,13 +369,13 @@ fun MediaScreen(
                             media = media,
                             isVisible = isVisible,
                             modifier = Modifier
-                                .weight(0.58f)
+                                .weight(0.65f)
                                 .fillMaxHeight(),
                         )
                     } else {
                         MediaLyricsLoadingPanel(
                             modifier = Modifier
-                                .weight(0.58f)
+                                .weight(0.65f)
                                 .fillMaxHeight(),
                         )
                     }
@@ -608,8 +608,8 @@ internal fun MediaArtworkCard(
     val cardShape = RoundedCornerShape(20.dp)
     val isWide = artwork != null && artwork.width > artwork.height * 1.25f
     val cardModifier = when {
-        compact && isWide -> Modifier.width(300.dp).aspectRatio(16f / 9f)
-        compact -> Modifier.size(220.dp)
+        compact && isWide -> Modifier.width(260.dp).aspectRatio(16f / 9f)
+        compact -> Modifier.size(200.dp)
         isWide -> Modifier.width(400.dp).aspectRatio(16f / 9f)
         else -> Modifier.size(300.dp)
     }
@@ -750,7 +750,7 @@ private fun MediaLyricsPanel(
                 .fillMaxWidth()
                 .weight(1f),
             contentPadding = PaddingValues(vertical = 160.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             itemsIndexed(
                 items = lyrics.lines,
@@ -892,12 +892,12 @@ private fun MediaLyricsPanel(
                                     } else {
                                         0f
                                     }
-                                    val effect = maxOf(activeGlow, afterGlow)
+                                    val effect = maxOf(activeGlow * progress, afterGlow)
                                     val shadow = if (effect > 0.01f) {
                                         Shadow(
-                                            color = Color.White.copy(alpha = 0.65f * effect),
+                                            color = Color.White.copy(alpha = 0.45f * effect),
                                             offset = Offset.Zero,
-                                            blurRadius = 10f * effect,
+                                            blurRadius = 8f * effect,
                                         )
                                     } else {
                                         null
@@ -922,7 +922,7 @@ private fun MediaLyricsPanel(
 
                                     val wipeBrush = if (rawProgress > 0f && rawProgress < 1f && sylWidthPx > 1f) {
                                         val wipeX = sylWidthPx * progress
-                                        val feather = (sylWidthPx * 0.28f).coerceAtLeast(10f)
+                                        val feather = (sylWidthPx * 0.18f).coerceAtLeast(6f)
                                         Brush.horizontalGradient(
                                             colors = listOf(sungColor, unsungColor),
                                             startX = wipeX - feather,
@@ -955,8 +955,8 @@ private fun MediaLyricsPanel(
                                         onTextLayout = { sylWidthPx = it.size.width.toFloat() },
                                         style = textStyle,
                                         modifier = Modifier.graphicsLayer {
-                                            scaleY = 1f + 0.12f * wave
-                                            transformOrigin = TransformOrigin(0.5f, 0.82f)
+                                            scaleY = 1f + 0.06f * wave
+                                            transformOrigin = TransformOrigin(0.5f, 0.85f)
                                         },
                                     )
                                 }
@@ -1169,26 +1169,26 @@ private fun MediaControlsRow(
         if (media.canSkipPrevious) {
             MediaCircleButton(
                 description = "Предыдущий трек",
-                size = 52.dp,
+                size = 46.dp,
                 canFocus = isVisible,
                 onClick = onSkipPrevious,
             ) { tint ->
-                SkipIcon(forward = false, tint = tint, modifier = Modifier.size(20.dp))
+                SkipIcon(forward = false, tint = tint, modifier = Modifier.size(18.dp))
             }
         }
 
         if (media.canPlayPause) {
             MediaCircleButton(
                 description = if (media.isPlaying) "Пауза" else "Воспроизвести",
-                size = 60.dp,
+                size = 54.dp,
                 canFocus = isVisible,
                 onClick = onTogglePlayPause,
                 modifier = Modifier.focusRequester(playPauseFocus),
             ) { tint ->
                 if (media.isPlaying) {
-                    PauseIcon(tint = tint, modifier = Modifier.size(22.dp))
+                    PauseIcon(tint = tint, modifier = Modifier.size(20.dp))
                 } else {
-                    PlayIcon(tint = tint, modifier = Modifier.size(22.dp))
+                    PlayIcon(tint = tint, modifier = Modifier.size(20.dp))
                 }
             }
         }
@@ -1196,34 +1196,34 @@ private fun MediaControlsRow(
         if (media.canSkipNext) {
             MediaCircleButton(
                 description = "Следующий трек",
-                size = 52.dp,
+                size = 46.dp,
                 canFocus = isVisible,
                 onClick = onSkipNext,
             ) { tint ->
-                SkipIcon(forward = true, tint = tint, modifier = Modifier.size(20.dp))
+                SkipIcon(forward = true, tint = tint, modifier = Modifier.size(18.dp))
             }
         }
 
         MediaCircleButton(
             description = if (lyricsEnabled) "Скрыть текст песни" else "Показать текст песни",
-            size = 52.dp,
+            size = 46.dp,
             canFocus = isVisible,
             onClick = onToggleLyrics,
         ) { tint ->
             LyricsIcon(
                 tint = if (lyricsEnabled) tint else tint.copy(alpha = 0.42f),
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(18.dp),
             )
         }
 
         MediaCircleButton(
             description = "Открыть приложение",
-            size = 52.dp,
+            size = 46.dp,
             canFocus = isVisible,
             onClick = onOpenApp,
             modifier = if (!media.canPlayPause) Modifier.focusRequester(playPauseFocus) else Modifier,
         ) { tint ->
-            OpenExternalIcon(tint = tint, modifier = Modifier.size(20.dp))
+            OpenExternalIcon(tint = tint, modifier = Modifier.size(18.dp))
         }
     }
 }
