@@ -2,6 +2,7 @@ package com.tvware.launcher.ui
 
 import android.app.Application
 import android.net.Uri
+import android.os.SystemClock
 import android.widget.Toast
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.ImageBitmap
@@ -12,6 +13,9 @@ import com.tvware.launcher.data.AppArtwork
 import com.tvware.launcher.data.AppInfo
 import com.tvware.launcher.data.BackgroundMode
 import com.tvware.launcher.data.LauncherSettings
+import com.tvware.launcher.data.MediaMonitorState
+import com.tvware.launcher.data.MediaScreenReducer
+import com.tvware.launcher.data.MediaScreenVisibilityState
 import com.tvware.launcher.data.NetworkStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +26,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -40,6 +45,9 @@ data class LauncherUiState(
     val customBackgroundPath: String? = null,
     val customBackgroundBitmap: ImageBitmap? = null,
     val networkStatus: NetworkStatus = NetworkStatus(),
+    val mediaScreenEnabled: Boolean = true,
+    val mediaState: MediaMonitorState = MediaMonitorState(),
+    val showMediaScreen: Boolean = false,
     val initializedDefaults: Boolean = false,
 )
 
@@ -50,17 +58,22 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val preferences = app.preferences
     private val iconCache = app.iconCache
     private val networkMonitor = app.networkMonitor
+    private val mediaMonitor = app.mediaMonitor
 
     private val backgroundLock = Mutex()
     private val customBgBitmap = MutableStateFlow<ImageBitmap?>(null)
+    private val mediaVisibility = MutableStateFlow(MediaScreenVisibilityState())
+    @Volatile
+    private var latestMediaEnabled = true
 
     val uiState: StateFlow<LauncherUiState> = combine(
         repository.apps,
         preferences.settingsFlow,
         networkMonitor.status,
         customBgBitmap,
-    ) { installed, settings, netStatus, bgBitmap ->
-        buildUiState(installed, settings, netStatus, bgBitmap)
+        combine(mediaMonitor.state, mediaVisibility) { media, visibility -> media to visibility },
+    ) { installed, settings, netStatus, bgBitmap, (media, visibility) ->
+        buildUiState(installed, settings, netStatus, bgBitmap, media, visibility)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -93,6 +106,27 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     }
                 }
         }
+
+        viewModelScope.launch {
+            combine(
+                mediaMonitor.state,
+                preferences.settingsFlow.map { it.mediaScreenEnabled }.distinctUntilChanged(),
+            ) { media, enabled -> media to enabled }
+                .collect { (media, enabled) ->
+                    latestMediaEnabled = enabled
+                    val session = media.activeMedia
+                    mediaVisibility.update { current ->
+                        MediaScreenReducer.onMediaUpdated(
+                            state = current,
+                            hasSession = session != null,
+                            isPlaying = session?.isPlaying == true,
+                            isPaused = session?.isPaused == true,
+                            enabled = enabled,
+                            nowMs = SystemClock.elapsedRealtime(),
+                        )
+                    }
+                }
+        }
     }
 
     fun getCachedArtwork(appInfo: AppInfo): AppArtwork? = iconCache.getFromMemory(appInfo)
@@ -102,6 +136,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun launchApp(appInfo: AppInfo): Boolean = repository.launchApp(appInfo)
 
     fun launchHapp(): Boolean = repository.launchHapp()
+
+    fun launchMediaApp(): Boolean {
+        val pkg = mediaMonitor.state.value.activeMedia?.packageName ?: return false
+        val appInfo = repository.apps.value.firstOrNull { it.packageName == pkg }
+        return if (appInfo != null) repository.launchApp(appInfo) else repository.launchPackage(pkg)
+    }
 
     fun refreshApps() = repository.refresh()
 
@@ -134,6 +174,61 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun setBackgroundMode(mode: BackgroundMode) {
         viewModelScope.launch { preferences.setBackgroundMode(mode) }
+    }
+
+    fun setMediaScreenEnabled(enabled: Boolean) {
+        viewModelScope.launch { preferences.setMediaScreenEnabled(enabled) }
+    }
+
+    fun onLauncherResumed(allowAutoShow: Boolean = true) {
+        mediaMonitor.refreshAccessAndSessions()
+        if (!allowAutoShow) return
+        val session = mediaMonitor.state.value.activeMedia
+        mediaVisibility.update { current ->
+            MediaScreenReducer.onLauncherResumed(
+                state = current,
+                hasSession = session != null,
+                isPlaying = session?.isPlaying == true,
+                enabled = latestMediaEnabled,
+                nowMs = SystemClock.elapsedRealtime(),
+            )
+        }
+    }
+
+    fun dismissMediaScreen() {
+        mediaVisibility.update { MediaScreenReducer.onDismissToApps(it) }
+    }
+
+    fun openMediaScreen() {
+        val session = mediaMonitor.state.value.activeMedia
+        mediaVisibility.update { current ->
+            MediaScreenReducer.onOpenMediaScreen(
+                state = current,
+                hasSession = session != null,
+                isPlaying = session?.isPlaying == true,
+                isPaused = session?.isPaused == true,
+                enabled = latestMediaEnabled,
+            )
+        }
+    }
+
+    fun toggleMediaPlayPause() {
+        mediaVisibility.update { MediaScreenReducer.onUserMediaControl(it) }
+        mediaMonitor.togglePlayPause()
+    }
+
+    fun skipMediaPrevious() {
+        mediaVisibility.update { MediaScreenReducer.onUserMediaControl(it) }
+        mediaMonitor.skipToPrevious()
+    }
+
+    fun skipMediaNext() {
+        mediaVisibility.update { MediaScreenReducer.onUserMediaControl(it) }
+        mediaMonitor.skipToNext()
+    }
+
+    fun markMediaInteraction() {
+        mediaVisibility.update { MediaScreenReducer.onUserMediaControl(it) }
     }
 
     fun importCustomBackground(uri: Uri) = editBackground {
@@ -198,6 +293,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         settings: LauncherSettings,
         netStatus: NetworkStatus,
         bgBitmap: ImageBitmap?,
+        mediaState: MediaMonitorState,
+        visibility: MediaScreenVisibilityState,
     ): LauncherUiState {
         val byPkg = installed.associateBy { it.packageName }
         val hiddenSet = settings.hiddenPackages
@@ -219,6 +316,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
 
         val hiddenApps = installed.filter { it.packageName in hiddenSet }
+        val showMedia = settings.mediaScreenEnabled &&
+            visibility.isVisible &&
+            mediaState.activeMedia != null
 
         return LauncherUiState(
             pinnedApps = pinnedApps,
@@ -230,6 +330,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             customBackgroundPath = settings.customBackgroundPath,
             customBackgroundBitmap = bgBitmap,
             networkStatus = netStatus,
+            mediaScreenEnabled = settings.mediaScreenEnabled,
+            mediaState = mediaState,
+            showMediaScreen = showMedia,
             initializedDefaults = settings.initializedDefaults,
         )
     }

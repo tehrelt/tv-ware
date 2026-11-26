@@ -1,6 +1,9 @@
 package com.tvware.launcher.ui.screens
 
 import android.view.KeyEvent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -19,6 +22,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -26,16 +30,24 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -59,23 +71,112 @@ fun HomeScreen(
     onVpnClick: () -> Unit,
     onLauncherSettingsClick: () -> Unit,
     onSystemSettingsClick: () -> Unit,
+    onDismissMediaScreen: () -> Unit,
+    onOpenMediaScreen: () -> Unit,
+    onToggleMediaPlayPause: () -> Unit,
+    onSkipMediaPrevious: () -> Unit,
+    onSkipMediaNext: () -> Unit,
+    onOpenMediaApp: () -> Unit,
+    onMediaKeyInteraction: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val firstTileFocus = remember { FocusRequester() }
     var initialFocusRequested by remember { mutableStateOf(false) }
+    val gridState = rememberLazyGridState()
+    val dragThresholdPx = with(LocalDensity.current) { 48.dp.toPx() }
 
-    LaunchedEffect(uiState.initializedDefaults, uiState.pinnedApps.size, uiState.gridApps.size) {
-        if (!initialFocusRequested && uiState.initializedDefaults && (uiState.pinnedApps.isNotEmpty() || uiState.gridApps.isNotEmpty())) {
+    val mediaProgress by animateFloatAsState(
+        targetValue = if (uiState.showMediaScreen) 1f else 0f,
+        animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
+        label = "media_screen_progress",
+    )
+
+    var lastMedia by remember { mutableStateOf(uiState.mediaState.activeMedia) }
+    LaunchedEffect(uiState.mediaState.activeMedia, mediaProgress) {
+        if (uiState.mediaState.activeMedia != null) {
+            lastMedia = uiState.mediaState.activeMedia
+        } else if (mediaProgress == 0f) {
+            lastMedia = null
+        }
+    }
+
+    LaunchedEffect(
+        uiState.initializedDefaults,
+        uiState.pinnedApps.size,
+        uiState.gridApps.size,
+        uiState.showMediaScreen,
+    ) {
+        if (!uiState.showMediaScreen &&
+            !initialFocusRequested &&
+            uiState.initializedDefaults &&
+            (uiState.pinnedApps.isNotEmpty() || uiState.gridApps.isNotEmpty())
+        ) {
             initialFocusRequested = true
+            withFrameNanos { }
             runCatching { firstTileFocus.requestFocus() }
         }
     }
 
+    var wasShowingMedia by remember { mutableStateOf(uiState.showMediaScreen) }
+    LaunchedEffect(uiState.showMediaScreen) {
+        if (wasShowingMedia && !uiState.showMediaScreen) {
+            initialFocusRequested = true
+            gridState.scrollToItem(0)
+            withFrameNanos { }
+            runCatching { firstTileFocus.requestFocus() }
+        }
+        wasShowingMedia = uiState.showMediaScreen
+    }
+
+    val canScrollUpToMedia = !uiState.showMediaScreen &&
+        uiState.mediaScreenEnabled &&
+        uiState.mediaState.activeMedia?.isPlaying == true
+
     Box(
         modifier = modifier
             .fillMaxSize()
+            .onPreviewKeyEvent { event ->
+                val code = event.nativeKeyEvent.keyCode
+                if (!uiState.showMediaScreen) {
+                    if (canScrollUpToMedia &&
+                        event.type == KeyEventType.KeyDown &&
+                        event.nativeKeyEvent.repeatCount == 0 &&
+                        code == KeyEvent.KEYCODE_PAGE_UP &&
+                        gridState.firstVisibleItemIndex == 0 &&
+                        gridState.firstVisibleItemScrollOffset == 0
+                    ) {
+                        onOpenMediaScreen()
+                        true
+                    } else {
+                        false
+                    }
+                } else if (event.type == KeyEventType.KeyDown) {
+                    when (code) {
+                        KeyEvent.KEYCODE_DPAD_DOWN,
+                        KeyEvent.KEYCODE_PAGE_DOWN -> {
+                            if (event.nativeKeyEvent.repeatCount == 0) {
+                                onDismissMediaScreen()
+                            }
+                            true
+                        }
+                        KeyEvent.KEYCODE_DPAD_UP -> true
+                        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                        KeyEvent.KEYCODE_MEDIA_PLAY,
+                        KeyEvent.KEYCODE_MEDIA_PAUSE,
+                        KeyEvent.KEYCODE_MEDIA_NEXT,
+                        KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                            onMediaKeyInteraction()
+                            false
+                        }
+                        else -> false
+                    }
+                } else {
+                    false
+                }
+            }
             .onKeyEvent { event ->
-                if (event.type == KeyEventType.KeyUp &&
+                if (!uiState.showMediaScreen &&
+                    event.type == KeyEventType.KeyUp &&
                     event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_MENU
                 ) {
                     onLauncherSettingsClick()
@@ -93,6 +194,75 @@ fun HomeScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .focusProperties {
+                    onEnter = {
+                        if (uiState.showMediaScreen) cancelFocusChange()
+                    }
+                }
+                .onPreviewKeyEvent { uiState.showMediaScreen }
+                .graphicsLayer {
+                    translationY = size.height * 0.14f * mediaProgress
+                    alpha = (1f - mediaProgress * 0.85f).coerceIn(0f, 1f)
+                    val scale = 1f - 0.04f * mediaProgress
+                    scaleX = scale
+                    scaleY = scale
+                }
+                .pointerInput(canScrollUpToMedia, dragThresholdPx) {
+                    if (!canScrollUpToMedia) return@pointerInput
+                    awaitPointerEventScope {
+                        var tracking = false
+                        var startX = 0f
+                        var startY = 0f
+                        var triggered = false
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val atTop = gridState.firstVisibleItemIndex == 0 &&
+                                gridState.firstVisibleItemScrollOffset == 0
+                            when (event.type) {
+                                PointerEventType.Scroll -> {
+                                    if (atTop) {
+                                        val dy = event.changes.fold(0f) { acc, change -> acc + change.scrollDelta.y }
+                                        if (dy < 0f) {
+                                            onOpenMediaScreen()
+                                        }
+                                    }
+                                }
+                                PointerEventType.Press -> {
+                                    val first = event.changes.firstOrNull()
+                                    if (first != null && atTop) {
+                                        tracking = true
+                                        startX = first.position.x
+                                        startY = first.position.y
+                                        triggered = false
+                                    } else {
+                                        tracking = false
+                                    }
+                                }
+                                PointerEventType.Move -> {
+                                    if (tracking && !triggered) {
+                                        val first = event.changes.firstOrNull()
+                                        if (first != null && first.pressed && atTop) {
+                                            val dy = first.position.y - startY
+                                            val dx = kotlin.math.abs(first.position.x - startX)
+                                            if (dy > dragThresholdPx && dy > dx) {
+                                                triggered = true
+                                                tracking = false
+                                                onOpenMediaScreen()
+                                            }
+                                        } else {
+                                            tracking = false
+                                        }
+                                    }
+                                }
+                                PointerEventType.Release,
+                                PointerEventType.Exit -> {
+                                    tracking = false
+                                    triggered = false
+                                }
+                            }
+                        }
+                    }
+                }
                 .padding(horizontal = 48.dp, vertical = 32.dp),
         ) {
             StatusBar(
@@ -100,6 +270,9 @@ fun HomeScreen(
                 onVpnClick = onVpnClick,
                 onLauncherSettingsClick = onLauncherSettingsClick,
                 onSystemSettingsClick = onSystemSettingsClick,
+                activeMedia = if (uiState.mediaScreenEnabled) uiState.mediaState.activeMedia else null,
+                onMediaClick = onOpenMediaScreen,
+                onUpFromStatusBar = onOpenMediaScreen,
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -108,83 +281,106 @@ fun HomeScreen(
                 val columns = uiState.gridColumns
                 val tileWidth = (maxWidth - 16.dp * (columns - 1)) / columns
                 LazyVerticalGrid(
+                    state = gridState,
                     columns = GridCells.Fixed(columns),
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 32.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                if (uiState.pinnedApps.isNotEmpty()) {
-                    item(
-                        key = "pinned_section",
-                        span = { GridItemSpan(maxLineSpan) },
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            SectionTitle(text = "Избранное")
-                            LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            ) {
-                                itemsIndexed(
-                                    items = uiState.pinnedApps,
-                                    key = { _, app -> "pin_${app.packageName}" },
-                                ) { index, app ->
-                                    val tileModifier = if (index == 0) {
-                                        Modifier
-                                            .width(tileWidth)
-                                            .focusRequester(firstTileFocus)
-                                    } else {
-                                        Modifier.width(tileWidth)
+                    if (uiState.pinnedApps.isNotEmpty()) {
+                        item(
+                            key = "pinned_section",
+                            span = { GridItemSpan(maxLineSpan) },
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                SectionTitle(text = "Избранное")
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                ) {
+                                    itemsIndexed(
+                                        items = uiState.pinnedApps,
+                                        key = { _, app -> "pin_${app.packageName}" },
+                                    ) { index, app ->
+                                        val tileModifier = if (index == 0) {
+                                            Modifier
+                                                .width(tileWidth)
+                                                .focusRequester(firstTileFocus)
+                                        } else {
+                                            Modifier.width(tileWidth)
+                                        }
+                                        AppTile(
+                                            app = app,
+                                            getCachedArtwork = getCachedArtwork,
+                                            loadArtwork = loadArtwork,
+                                            onClick = { onAppClick(app) },
+                                            onLongClick = {
+                                                onAppLongClick(app, true, index, uiState.pinnedApps.size)
+                                            },
+                                            modifier = tileModifier,
+                                        )
                                     }
-                                    AppTile(
-                                        app = app,
-                                        getCachedArtwork = getCachedArtwork,
-                                        loadArtwork = loadArtwork,
-                                        onClick = { onAppClick(app) },
-                                        onLongClick = {
-                                            onAppLongClick(app, true, index, uiState.pinnedApps.size)
-                                        },
-                                        modifier = tileModifier,
-                                    )
                                 }
                             }
                         }
                     }
-                }
 
-                item(
-                    key = "grid_header",
-                    span = { GridItemSpan(maxLineSpan) },
-                ) {
-                    SectionTitle(
-                        text = "Все приложения",
-                        modifier = Modifier.padding(top = if (uiState.pinnedApps.isNotEmpty()) 16.dp else 0.dp),
-                    )
-                }
-
-                itemsIndexed(
-                    items = uiState.gridApps,
-                    key = { _, app -> "grid_${app.packageName}" },
-                ) { index, app ->
-                    val tileModifier = if (uiState.pinnedApps.isEmpty() && index == 0) {
-                        Modifier
-                            .fillMaxWidth()
-                            .focusRequester(firstTileFocus)
-                    } else {
-                        Modifier.fillMaxWidth()
+                    item(
+                        key = "grid_header",
+                        span = { GridItemSpan(maxLineSpan) },
+                    ) {
+                        SectionTitle(
+                            text = "Все приложения",
+                            modifier = Modifier.padding(top = if (uiState.pinnedApps.isNotEmpty()) 16.dp else 0.dp),
+                        )
                     }
-                    AppTile(
-                        app = app,
-                        getCachedArtwork = getCachedArtwork,
-                        loadArtwork = loadArtwork,
-                        onClick = { onAppClick(app) },
-                        onLongClick = {
-                            onAppLongClick(app, false, index, uiState.gridApps.size)
-                        },
-                        modifier = tileModifier,
-                    )
+
+                    itemsIndexed(
+                        items = uiState.gridApps,
+                        key = { _, app -> "grid_${app.packageName}" },
+                    ) { index, app ->
+                        val tileModifier = if (uiState.pinnedApps.isEmpty() && index == 0) {
+                            Modifier
+                                .fillMaxWidth()
+                                .focusRequester(firstTileFocus)
+                        } else {
+                            Modifier.fillMaxWidth()
+                        }
+                        AppTile(
+                            app = app,
+                            getCachedArtwork = getCachedArtwork,
+                            loadArtwork = loadArtwork,
+                            onClick = { onAppClick(app) },
+                            onLongClick = {
+                                onAppLongClick(app, false, index, uiState.gridApps.size)
+                            },
+                            modifier = tileModifier,
+                        )
+                    }
                 }
             }
-            }
+        }
+
+        val displayMedia = uiState.mediaState.activeMedia ?: lastMedia
+        if ((uiState.showMediaScreen || mediaProgress > 0f) && displayMedia != null) {
+            MediaScreen(
+                media = displayMedia,
+                networkStatus = uiState.networkStatus,
+                backgroundMode = uiState.backgroundMode,
+                customBackgroundBitmap = uiState.customBackgroundBitmap,
+                isVisible = uiState.showMediaScreen,
+                onTogglePlayPause = onToggleMediaPlayPause,
+                onSkipPrevious = onSkipMediaPrevious,
+                onSkipNext = onSkipMediaNext,
+                onOpenApp = onOpenMediaApp,
+                onScrollToApps = onDismissMediaScreen,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        translationY = -size.height * (1f - mediaProgress)
+                        alpha = mediaProgress
+                    },
+            )
         }
     }
 }

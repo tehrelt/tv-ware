@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">TV Launcher</string>
+    <string name="media_listener_label">TV Launcher Медиа</string>
 </resources>

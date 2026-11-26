@@ -91,16 +91,20 @@ class AppRepository(
 
     fun launchHapp(): Boolean {
         for (pkg in HAPP_PACKAGES) {
-            val intent = pm.getLeanbackLaunchIntentForPackage(pkg)
-                ?: pm.getLaunchIntentForPackage(pkg)
-            if (intent != null) {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                if (runCatching { context.startActivity(intent) }.isSuccess) {
-                    return true
-                }
-            }
+            if (launchPackage(pkg)) return true
         }
         return false
+    }
+
+    fun launchPackage(packageName: String): Boolean {
+        val intent = pm.getLeanbackLaunchIntentForPackage(packageName)
+            ?: pm.getLaunchIntentForPackage(packageName)
+            ?: return false
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return runCatching {
+            context.startActivity(intent)
+            true
+        }.getOrDefault(false)
     }
 
     private suspend fun queryInstalledApps(): List<AppInfo> = withContext(Dispatchers.IO) {

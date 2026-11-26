@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import android.view.KeyEvent
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -36,17 +38,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import com.tvware.launcher.data.MediaSessionInfo
 import com.tvware.launcher.data.NetworkStatus
 import com.tvware.launcher.ui.theme.LauncherColors
 import java.text.SimpleDateFormat
@@ -62,6 +69,9 @@ fun StatusBar(
     onLauncherSettingsClick: () -> Unit,
     onSystemSettingsClick: () -> Unit,
     modifier: Modifier = Modifier,
+    activeMedia: MediaSessionInfo? = null,
+    onMediaClick: () -> Unit = {},
+    onUpFromStatusBar: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -86,11 +96,24 @@ fun StatusBar(
     val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
     val dateFormat = remember { SimpleDateFormat("EEE, d MMM", Locale.getDefault()) }
     val dateObj = remember(nowMillis) { Date(nowMillis) }
+    val showMediaChip = activeMedia != null && activeMedia.isPlaying
 
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(56.dp),
+            .height(56.dp)
+            .onPreviewKeyEvent { event ->
+                if (showMediaChip &&
+                    event.type == KeyEventType.KeyDown &&
+                    event.nativeKeyEvent.repeatCount == 0 &&
+                    event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_UP
+                ) {
+                    onUpFromStatusBar()
+                    true
+                } else {
+                    false
+                }
+            },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
@@ -120,6 +143,12 @@ fun StatusBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            if (activeMedia != null && activeMedia.isPlaying) {
+                NowPlayingChip(
+                    title = activeMedia.title,
+                    onClick = onMediaClick,
+                )
+            }
             NetworkStatusIndicator(networkStatus = networkStatus)
             VpnStatusButton(isVpnActive = networkStatus.isVpnActive, onClick = onVpnClick)
             StatusIconButton(
@@ -139,7 +168,61 @@ fun StatusBar(
 }
 
 @Composable
-private fun NetworkStatusIndicator(networkStatus: NetworkStatus) {
+private fun NowPlayingChip(
+    title: String,
+    onClick: () -> Unit,
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(10.dp)
+    val dotColor = if (isFocused) LauncherColors.VpnActiveOnLight else LauncherColors.VpnActive
+    val textColor = if (isFocused) LauncherColors.FocusContent else LauncherColors.TextPrimary
+
+    Surface(
+        onClick = onClick,
+        shape = ClickableSurfaceDefaults.shape(shape = shape),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = LauncherColors.SurfaceCard,
+            focusedContainerColor = LauncherColors.FocusSurface,
+        ),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.0f, pressedScale = 0.98f),
+        border = ClickableSurfaceDefaults.border(
+            border = Border(BorderStroke(1.dp, LauncherColors.BorderSubtle), shape = shape),
+            focusedBorder = Border.None,
+        ),
+        modifier = Modifier
+            .height(36.dp)
+            .widthIn(max = 240.dp)
+            .onFocusChanged { isFocused = it.isFocused },
+    ) {
+        Row(
+            modifier = Modifier
+                .height(36.dp)
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(dotColor),
+            )
+            Text(
+                text = title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = TextStyle(
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = textColor,
+                ),
+            )
+        }
+    }
+}
+
+@Composable
+internal fun NetworkStatusIndicator(networkStatus: NetworkStatus) {
     val connected = networkStatus.isWifiConnected || networkStatus.isEthernetConnected
     val label = when {
         networkStatus.isWifiConnected -> "Wi-Fi"

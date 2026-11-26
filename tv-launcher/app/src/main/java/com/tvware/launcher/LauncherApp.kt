@@ -4,6 +4,7 @@ import android.app.Application
 import com.tvware.launcher.data.AppRepository
 import com.tvware.launcher.data.IconCache
 import com.tvware.launcher.data.LauncherPreferences
+import com.tvware.launcher.data.MediaMonitor
 import com.tvware.launcher.data.NetworkMonitor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -17,10 +18,12 @@ class LauncherApp : Application() {
     val preferences: LauncherPreferences by lazy { LauncherPreferences(this) }
     val appRepository: AppRepository by lazy { AppRepository(this, iconCache, appScope) }
     val networkMonitor: NetworkMonitor by lazy { NetworkMonitor(this) }
+    val mediaMonitor: MediaMonitor by lazy { MediaMonitor(this, appScope) }
 
     override fun onCreate() {
         super.onCreate()
         appRepository.start()
         networkMonitor.start()
+        mediaMonitor.start()
     }
 }

@@ -29,6 +29,7 @@ data class LauncherSettings(
     val gridColumns: Int = 5,
     val backgroundMode: BackgroundMode = BackgroundMode.GRADIENT,
     val customBackgroundPath: String? = null,
+    val mediaScreenEnabled: Boolean = true,
     val initializedDefaults: Boolean = false,
 )
 
@@ -44,6 +45,7 @@ class LauncherPreferences(private val context: Context) {
                 ?.let { runCatching { BackgroundMode.valueOf(it) }.getOrNull() }
                 ?: BackgroundMode.GRADIENT,
             customBackgroundPath = prefs[KEY_CUSTOM_BG_PATH]?.takeIf { it.isNotBlank() },
+            mediaScreenEnabled = prefs[KEY_MEDIA_SCREEN_ENABLED] ?: true,
             initializedDefaults = prefs[KEY_INITIALIZED_DEFAULTS] ?: false,
         )
     }
@@ -117,6 +119,12 @@ class LauncherPreferences(private val context: Context) {
         }
     }
 
+    suspend fun setMediaScreenEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_MEDIA_SCREEN_ENABLED] = enabled
+        }
+    }
+
     suspend fun setCustomBackgroundPath(path: String?) {
         context.dataStore.edit { prefs ->
             if (path.isNullOrBlank()) {
@@ -146,6 +154,7 @@ class LauncherPreferences(private val context: Context) {
         val KEY_GRID_COLUMNS = intPreferencesKey("grid_columns")
         val KEY_BG_MODE = stringPreferencesKey("background_mode")
         val KEY_CUSTOM_BG_PATH = stringPreferencesKey("custom_bg_path")
+        val KEY_MEDIA_SCREEN_ENABLED = booleanPreferencesKey("media_screen_enabled")
 
         val DEFAULT_PIN_GROUPS = listOf(
             listOf(

@@ -44,6 +44,8 @@ fun SettingsScreen(
     onPickCustomBackground: () -> Unit,
     onClearCustomBackground: () -> Unit,
     onSelectGridColumns: (Int) -> Unit,
+    onSetMediaScreenEnabled: (Boolean) -> Unit,
+    onRequestMediaAccess: () -> Unit,
     onUnhideApp: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -147,6 +149,52 @@ fun SettingsScreen(
                                 onClick = { onSelectGridColumns(n) },
                             )
                         }
+                    }
+                }
+            }
+
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SettingsSectionTitle("Медиа-экран")
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OptionChip(
+                            label = "Включён",
+                            selected = uiState.mediaScreenEnabled,
+                            onClick = { onSetMediaScreenEnabled(true) },
+                        )
+                        OptionChip(
+                            label = "Выключен",
+                            selected = !uiState.mediaScreenEnabled,
+                            onClick = { onSetMediaScreenEnabled(false) },
+                        )
+                        if (uiState.mediaScreenEnabled && !uiState.mediaState.hasAccess) {
+                            OptionChip(
+                                label = "Разрешить доступ",
+                                selected = false,
+                                onClick = onRequestMediaAccess,
+                            )
+                        }
+                    }
+                    if (uiState.mediaScreenEnabled) {
+                        Text(
+                            text = if (uiState.mediaState.hasAccess) {
+                                "Доступ к медиа активен"
+                            } else {
+                                "Нужен доступ к уведомлениям для чтения активных плееров"
+                            },
+                            style = TextStyle(
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Normal,
+                                color = if (uiState.mediaState.hasAccess) {
+                                    LauncherColors.VpnActive
+                                } else {
+                                    LauncherColors.TextMuted
+                                },
+                            ),
+                        )
                     }
                 }
             }
