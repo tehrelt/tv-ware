@@ -3,7 +3,9 @@ name: Release TV Launcher
 on:
   push:
     branches: [main]
-    paths: ['tv-launcher/**']
+    paths:
+      - 'tv-launcher/**'
+      - '.github/workflows/release-launcher.yml'
   workflow_dispatch:
 
 concurrency:
