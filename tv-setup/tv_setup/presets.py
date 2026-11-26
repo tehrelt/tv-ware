@@ -5,6 +5,9 @@ from dataclasses import dataclass
 LAUNCHER_PACKAGE = "com.tvware.launcher"
 LAUNCHER_ACTIVITY = "com.tvware.launcher/.MainActivity"
 LAUNCHER_DREAM_COMPONENT = "com.tvware.launcher/.LauncherDreamService"
+LAUNCHER_NOTIFICATION_LISTENER = (
+    "com.tvware.launcher/.data.MediaNotificationListenerService"
+)
 HAPP_PACKAGES = ("su.happ.proxyutility", "com.happproxy")
 STOCK_LAUNCHER_PACKAGES = (
     "com.google.android.apps.tv.launcherx",
@@ -40,9 +43,13 @@ BLOAT_CATALOG: tuple[BloatEntry, ...] = (
     BloatEntry("com.google.android.play.games", "Google Play Games", _GOOGLE, True),
     BloatEntry("com.google.android.videos", "Google TV", _GOOGLE, True),
     BloatEntry("com.google.android.music", "Google Play Music", _GOOGLE, True),
-    BloatEntry("com.google.android.tvrecommendations", "TV Recommendations", _GOOGLE, True),
+    BloatEntry(
+        "com.google.android.tvrecommendations", "TV Recommendations", _GOOGLE, True
+    ),
     BloatEntry("com.google.android.feedback", "Google Feedback", _GOOGLE, True),
-    BloatEntry("com.google.android.partnersetup", "Google Partner Setup", _GOOGLE, True),
+    BloatEntry(
+        "com.google.android.partnersetup", "Google Partner Setup", _GOOGLE, True
+    ),
     BloatEntry("com.android.dreams.basic", "Basic Screensavers", _GOOGLE, True),
     BloatEntry("com.android.htmlviewer", "HTML Viewer", _GOOGLE, True),
     BloatEntry("com.google.android.katniss", "Google Assistant", _OPTIONAL, False),

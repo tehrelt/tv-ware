@@ -19,3 +19,4 @@ keystore.properties
 *.zip
 .DS_Store
 Thumbs.db
+.env

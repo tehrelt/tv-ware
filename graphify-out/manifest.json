@@ -1,0 +1,416 @@
+{
+  ".github/workflows/release-launcher.yml": {
+    "mtime": 1795712862.2429378,
+    "seen": 1795714041.7875354,
+    "ast_hash": "50933671be45ec557052bdc6700348c5",
+    "semantic_hash": "50933671be45ec557052bdc6700348c5"
+  },
+  ".serena/project.yml": {
+    "mtime": 1795681573.3843963,
+    "seen": 1795714041.7875354,
+    "ast_hash": "d345f9ea58e90f4e7d0d975758c10e91",
+    "semantic_hash": "d345f9ea58e90f4e7d0d975758c10e91"
+  },
+  "tv-launcher/app/build.gradle.kts": {
+    "mtime": 1795712377.897489,
+    "seen": 1795714041.7875354,
+    "ast_hash": "2b2ca4c67bd22a3f89e519e7aebbc193",
+    "semantic_hash": "2b2ca4c67bd22a3f89e519e7aebbc193"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/LauncherApp.kt": {
+    "mtime": 1795706360.152748,
+    "seen": 1795714041.7875354,
+    "ast_hash": "7654745ae98c3a2b7ba331fb55585ee2",
+    "semantic_hash": "7654745ae98c3a2b7ba331fb55585ee2"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/LauncherDreamService.kt": {
+    "mtime": 1795705676.442737,
+    "seen": 1795714041.7875354,
+    "ast_hash": "cda02262a2b943a1e9aeb238bc3f8687",
+    "semantic_hash": "cda02262a2b943a1e9aeb238bc3f8687"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/MainActivity.kt": {
+    "mtime": 1795712684.1922705,
+    "seen": 1795714041.7875354,
+    "ast_hash": "2da7d9f8ba4d4926c099493eb2983e71",
+    "semantic_hash": "2da7d9f8ba4d4926c099493eb2983e71"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/data/AppInfo.kt": {
+    "mtime": 1795681123.8684032,
+    "seen": 1795714041.7875354,
+    "ast_hash": "e821290c1946c0acae6d2af2e6cccf5c",
+    "semantic_hash": "e821290c1946c0acae6d2af2e6cccf5c"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/data/AppRepository.kt": {
+    "mtime": 1795706348.991493,
+    "seen": 1795714041.7875354,
+    "ast_hash": "d715de4325114f6736a6dccc0389936e",
+    "semantic_hash": "d715de4325114f6736a6dccc0389936e"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/data/HappAutoStart.kt": {
+    "mtime": 1795706221.4485972,
+    "seen": 1795714041.7875354,
+    "ast_hash": "49d6512046c5ae8b6cc3b90be56a2908",
+    "semantic_hash": "49d6512046c5ae8b6cc3b90be56a2908"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/data/IconCache.kt": {
+    "mtime": 1795681123.8694026,
+    "seen": 1795714041.7875354,
+    "ast_hash": "48aee56cba4538f88ed264bc8f598552",
+    "semantic_hash": "48aee56cba4538f88ed264bc8f598552"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/data/LauncherPreferences.kt": {
+    "mtime": 1795712427.3209958,
+    "seen": 1795714041.7875354,
+    "ast_hash": "15a729d55147a10e8d5eec2394eebed4",
+    "semantic_hash": "15a729d55147a10e8d5eec2394eebed4"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/data/MediaArtworkSource.kt": {
+    "mtime": 1795702610.97875,
+    "seen": 1795714041.7875354,
+    "ast_hash": "7db78783c1aece3f350bbe710d71dc34",
+    "semantic_hash": "7db78783c1aece3f350bbe710d71dc34"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/data/MediaMonitor.kt": {
+    "mtime": 1795712443.3289044,
+    "seen": 1795714041.7875354,
+    "ast_hash": "327cf18f408d9870668fb64624888620",
+    "semantic_hash": "327cf18f408d9870668fb64624888620"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/data/MediaNotificationListenerService.kt": {
+    "mtime": 1795682723.5794253,
+    "seen": 1795714041.7875354,
+    "ast_hash": "aab4be41ecb99766d33bef030b1cfa7e",
+    "semantic_hash": "aab4be41ecb99766d33bef030b1cfa7e"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/data/MediaState.kt": {
+    "mtime": 1795712435.6102812,
+    "seen": 1795714041.7875354,
+    "ast_hash": "983c9cd9ecb53dc78b382842513640cf",
+    "semantic_hash": "983c9cd9ecb53dc78b382842513640cf"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/data/MediaTrackKey.kt": {
+    "mtime": 1795698521.4402697,
+    "seen": 1795714041.7875354,
+    "ast_hash": "d26afcdef3125467bbcb9ef6099e9623",
+    "semantic_hash": "d26afcdef3125467bbcb9ef6099e9623"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/data/NetworkMonitor.kt": {
+    "mtime": 1795681123.8704033,
+    "seen": 1795714041.7875354,
+    "ast_hash": "c896d7f29385d85d70705684d1a0c82d",
+    "semantic_hash": "c896d7f29385d85d70705684d1a0c82d"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/data/PackageOrder.kt": {
+    "mtime": 1795681123.8714027,
+    "seen": 1795714041.7875354,
+    "ast_hash": "4d3d3fd46eccb63592e76cb871541f38",
+    "semantic_hash": "4d3d3fd46eccb63592e76cb871541f38"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/data/SpicyLyricsClient.kt": {
+    "mtime": 1795712479.8077035,
+    "seen": 1795714041.7875354,
+    "ast_hash": "098419110ebf3c1c4599e32921be2fab",
+    "semantic_hash": "098419110ebf3c1c4599e32921be2fab"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/data/SpicyLyricsModels.kt": {
+    "mtime": 1795712460.0299573,
+    "seen": 1795714041.7875354,
+    "ast_hash": "951084bc4b63e83608b52e7012e3c822",
+    "semantic_hash": "951084bc4b63e83608b52e7012e3c822"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/ui/LauncherViewModel.kt": {
+    "mtime": 1795712632.9081311,
+    "seen": 1795714041.7875354,
+    "ast_hash": "6499834a83490902bf51d9f83d1a2125",
+    "semantic_hash": "6499834a83490902bf51d9f83d1a2125"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/ui/components/AppContextDialog.kt": {
+    "mtime": 1795702638.5597472,
+    "seen": 1795714041.7875354,
+    "ast_hash": "e4da8e081b7586ba9daf471d02600546",
+    "semantic_hash": "e4da8e081b7586ba9daf471d02600546"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/ui/components/AppTile.kt": {
+    "mtime": 1795681123.8734028,
+    "seen": 1795714041.7875354,
+    "ast_hash": "3f0a59d8926e31ab75e1d48f11c42ca0",
+    "semantic_hash": "3f0a59d8926e31ab75e1d48f11c42ca0"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/ui/components/MenuConfirmInput.kt": {
+    "mtime": 1795702599.3229663,
+    "seen": 1795714041.7875354,
+    "ast_hash": "7540c6ca5f85899100243c941620a01d",
+    "semantic_hash": "7540c6ca5f85899100243c941620a01d"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/ui/components/StatusBar.kt": {
+    "mtime": 1795683426.6080513,
+    "seen": 1795714041.7875354,
+    "ast_hash": "3f2a662316fa70df64e1bb6c6b0adcb8",
+    "semantic_hash": "3f2a662316fa70df64e1bb6c6b0adcb8"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/ui/screens/HomeScreen.kt": {
+    "mtime": 1795712696.369107,
+    "seen": 1795714041.7875354,
+    "ast_hash": "abd2e57c71424fd0a961d7054c8e4a46",
+    "semantic_hash": "abd2e57c71424fd0a961d7054c8e4a46"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/ui/screens/IdleDreamScreen.kt": {
+    "mtime": 1795705665.7908716,
+    "seen": 1795714041.7875354,
+    "ast_hash": "36575a49b4053f7444105ab440900fc9",
+    "semantic_hash": "36575a49b4053f7444105ab440900fc9"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/ui/screens/MediaScreen.kt": {
+    "mtime": 1795712831.0505502,
+    "seen": 1795714041.7875354,
+    "ast_hash": "5d5cce8bbc9b1db27283704d5c4505cf",
+    "semantic_hash": "5d5cce8bbc9b1db27283704d5c4505cf"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/ui/screens/SettingsScreen.kt": {
+    "mtime": 1795712655.6520872,
+    "seen": 1795714041.7875354,
+    "ast_hash": "0fb51fd677aa920c0e17cd7c9020fb81",
+    "semantic_hash": "0fb51fd677aa920c0e17cd7c9020fb81"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/ui/screens/WarpedArtwork.kt": {
+    "mtime": 1795704588.034668,
+    "seen": 1795714041.7875354,
+    "ast_hash": "c8f3a3af312592e59ad5da79c69ca766",
+    "semantic_hash": "c8f3a3af312592e59ad5da79c69ca766"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/ui/theme/Theme.kt": {
+    "mtime": 1795681123.8754034,
+    "seen": 1795714041.7875354,
+    "ast_hash": "08dd654dd7efbc379e9fd5141c455be7",
+    "semantic_hash": "08dd654dd7efbc379e9fd5141c455be7"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/web/QrCodeGenerator.kt": {
+    "mtime": 1795712490.5955894,
+    "seen": 1795714041.7875354,
+    "ast_hash": "2b1ca139d4c5fc115a23ae991b48eae2",
+    "semantic_hash": "2b1ca139d4c5fc115a23ae991b48eae2"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/web/WebSettingsHtml.kt": {
+    "mtime": 1795712517.9064162,
+    "seen": 1795714041.7875354,
+    "ast_hash": "ed9ed1efe09f8fda330e31a645249843",
+    "semantic_hash": "ed9ed1efe09f8fda330e31a645249843"
+  },
+  "tv-launcher/app/src/main/java/com/tvware/launcher/web/WebSettingsServer.kt": {
+    "mtime": 1795712545.3613322,
+    "seen": 1795714041.7875354,
+    "ast_hash": "d70984f107a921ae16dfb5bbc2744b7a",
+    "semantic_hash": "d70984f107a921ae16dfb5bbc2744b7a"
+  },
+  "tv-launcher/app/src/test/java/com/tvware/launcher/data/HappAutoStartTest.kt": {
+    "mtime": 1795706214.628783,
+    "seen": 1795714041.7875354,
+    "ast_hash": "3bfe2214e5dc30266e8c11a18397d884",
+    "semantic_hash": "3bfe2214e5dc30266e8c11a18397d884"
+  },
+  "tv-launcher/app/src/test/java/com/tvware/launcher/data/IdleDreamTest.kt": {
+    "mtime": 1795705381.2789912,
+    "seen": 1795714041.7875354,
+    "ast_hash": "2297b21ff8d7a4fa1a68d5fd5117912e",
+    "semantic_hash": "2297b21ff8d7a4fa1a68d5fd5117912e"
+  },
+  "tv-launcher/app/src/test/java/com/tvware/launcher/data/LauncherInputAndArtworkTest.kt": {
+    "mtime": 1795702562.566141,
+    "seen": 1795714041.7875354,
+    "ast_hash": "391eb5f50c0c03a202ee5f990f0e5a63",
+    "semantic_hash": "391eb5f50c0c03a202ee5f990f0e5a63"
+  },
+  "tv-launcher/app/src/test/java/com/tvware/launcher/data/MediaPresentationTest.kt": {
+    "mtime": 1795698298.1878645,
+    "seen": 1795714041.7875354,
+    "ast_hash": "5adf15087ac7f9818810917eabe4cc76",
+    "semantic_hash": "5adf15087ac7f9818810917eabe4cc76"
+  },
+  "tv-launcher/app/src/test/java/com/tvware/launcher/data/MediaStateTest.kt": {
+    "mtime": 1795689276.0991142,
+    "seen": 1795714041.7875354,
+    "ast_hash": "27685b946dcaba5bdb63a81667c7f1c6",
+    "semantic_hash": "27685b946dcaba5bdb63a81667c7f1c6"
+  },
+  "tv-launcher/app/src/test/java/com/tvware/launcher/data/PackageOrderTest.kt": {
+    "mtime": 1795681123.8794029,
+    "seen": 1795714041.7875354,
+    "ast_hash": "d34aeb83a9b14d466ecac0f51a7d0cf8",
+    "semantic_hash": "d34aeb83a9b14d466ecac0f51a7d0cf8"
+  },
+  "tv-launcher/app/src/test/java/com/tvware/launcher/data/SpicyLyricsTest.kt": {
+    "mtime": 1795713214.4893627,
+    "seen": 1795714041.7875354,
+    "ast_hash": "565b742b9c5b79d9a9c9118efbb75bb3",
+    "semantic_hash": "565b742b9c5b79d9a9c9118efbb75bb3"
+  },
+  "tv-launcher/app/src/test/java/com/tvware/launcher/web/WebSettingsServerTest.kt": {
+    "mtime": 1795712369.3365312,
+    "seen": 1795714041.7875354,
+    "ast_hash": "ff96c3c5f014606aaa9d460867a660a7",
+    "semantic_hash": "ff96c3c5f014606aaa9d460867a660a7"
+  },
+  "tv-launcher/build.gradle.kts": {
+    "mtime": 1795681123.8804035,
+    "seen": 1795714041.7875354,
+    "ast_hash": "b939260f956f3cd415762aadd74bbc28",
+    "semantic_hash": "b939260f956f3cd415762aadd74bbc28"
+  },
+  "tv-launcher/gradlew": {
+    "mtime": 1795681123.8824034,
+    "seen": 1795714041.7875354,
+    "ast_hash": "f2d3d383787f61a4a99710ee8d780434",
+    "semantic_hash": "f2d3d383787f61a4a99710ee8d780434"
+  },
+  "tv-launcher/settings.gradle.kts": {
+    "mtime": 1795681123.8834033,
+    "seen": 1795714041.7875354,
+    "ast_hash": "fb5c95f9bcf93966314dcc9fb5a74d9f",
+    "semantic_hash": "fb5c95f9bcf93966314dcc9fb5a74d9f"
+  },
+  "tv-setup/tests/__init__.py": {
+    "mtime": 1795681123.8846846,
+    "seen": 1795714041.7875354,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "tv-setup/tests/test_adb_client.py": {
+    "mtime": 1795681123.8856795,
+    "seen": 1795714041.7875354,
+    "ast_hash": "f2b1b21da9a4bb1b507c0e544d858eae",
+    "semantic_hash": "f2b1b21da9a4bb1b507c0e544d858eae"
+  },
+  "tv-setup/tests/test_discovery.py": {
+    "mtime": 1795681123.8856795,
+    "seen": 1795714041.7875354,
+    "ast_hash": "68bd7a1a7d87924a985198c73cae9ede",
+    "semantic_hash": "68bd7a1a7d87924a985198c73cae9ede"
+  },
+  "tv-setup/tests/test_gui_smoke.py": {
+    "mtime": 1795706037.6261563,
+    "seen": 1795714041.7875354,
+    "ast_hash": "1cec8181784e4d8111e1ab1e5fde6c5e",
+    "semantic_hash": "1cec8181784e4d8111e1ab1e5fde6c5e"
+  },
+  "tv-setup/tests/test_installer.py": {
+    "mtime": 1795706029.0224519,
+    "seen": 1795714041.7875354,
+    "ast_hash": "6ee9fc6d187a8daa290fb84c69724bb5",
+    "semantic_hash": "6ee9fc6d187a8daa290fb84c69724bb5"
+  },
+  "tv-setup/tests/test_optimizer.py": {
+    "mtime": 1795705598.5908215,
+    "seen": 1795714041.7875354,
+    "ast_hash": "f447254f7aeea04b412bd2b7392e496a",
+    "semantic_hash": "f447254f7aeea04b412bd2b7392e496a"
+  },
+  "tv-setup/tv_setup/__init__.py": {
+    "mtime": 1795681123.88768,
+    "seen": 1795714041.7875354,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "tv-setup/tv_setup/__main__.py": {
+    "mtime": 1795681123.8886783,
+    "seen": 1795714041.7875354,
+    "ast_hash": "891ba6c46bf6c973b02a7210792220e1",
+    "semantic_hash": "891ba6c46bf6c973b02a7210792220e1"
+  },
+  "tv-setup/tv_setup/adb_client.py": {
+    "mtime": 1795681123.8886783,
+    "seen": 1795714041.7875354,
+    "ast_hash": "31054ef31df4f38bc198ffbefd6e0134",
+    "semantic_hash": "31054ef31df4f38bc198ffbefd6e0134"
+  },
+  "tv-setup/tv_setup/discovery.py": {
+    "mtime": 1795681123.8896806,
+    "seen": 1795714041.7875354,
+    "ast_hash": "04d438209d0913ff3de6ad79d87dd720",
+    "semantic_hash": "04d438209d0913ff3de6ad79d87dd720"
+  },
+  "tv-setup/tv_setup/gui.py": {
+    "mtime": 1795706120.5332375,
+    "seen": 1795714041.7875354,
+    "ast_hash": "c072f745cba60dd3801ba487139837b5",
+    "semantic_hash": "c072f745cba60dd3801ba487139837b5"
+  },
+  "tv-setup/tv_setup/installer.py": {
+    "mtime": 1795706077.717636,
+    "seen": 1795714041.7875354,
+    "ast_hash": "e2fa698e414b5e1a4344f1db1b29b2f3",
+    "semantic_hash": "e2fa698e414b5e1a4344f1db1b29b2f3"
+  },
+  "tv-setup/tv_setup/optimizer.py": {
+    "mtime": 1795705548.7540715,
+    "seen": 1795714041.7875354,
+    "ast_hash": "e0ef61f51bd63e0843a10b0b81f84934",
+    "semantic_hash": "e0ef61f51bd63e0843a10b0b81f84934"
+  },
+  "tv-setup/tv_setup/presets.py": {
+    "mtime": 1795705479.023215,
+    "seen": 1795714041.7875354,
+    "ast_hash": "bfe7ef8212a2b1f37b2a4e097c5aa2b0",
+    "semantic_hash": "bfe7ef8212a2b1f37b2a4e097c5aa2b0"
+  },
+  "vendor/custom/scripts/sync_custom_apks.py": {
+    "mtime": 1795681123.9006796,
+    "seen": 1795714041.7875354,
+    "ast_hash": "b4443af7b6fb38e85f01be104370f7e8",
+    "semantic_hash": "b4443af7b6fb38e85f01be104370f7e8"
+  },
+  "README.md": {
+    "mtime": 1795702723.2396505,
+    "seen": 1795714041.7875354,
+    "ast_hash": "49678d69ccb3547d67456b291e184420",
+    "semantic_hash": "49678d69ccb3547d67456b291e184420"
+  },
+  "docs/superpowers/plans/2026-11-26-tv-setup.md": {
+    "mtime": 1795681123.8563128,
+    "seen": 1795714041.7875354,
+    "ast_hash": "c7ee2f8685e237b4c3ed53ab6ec9a1f1",
+    "semantic_hash": "c7ee2f8685e237b4c3ed53ab6ec9a1f1"
+  },
+  "docs/superpowers/specs/2026-11-25-tv-setup-design.md": {
+    "mtime": 1795681123.8573136,
+    "seen": 1795714041.7875354,
+    "ast_hash": "4643dd877f9b5097260362d6c5861ef8",
+    "semantic_hash": "4643dd877f9b5097260362d6c5861ef8"
+  },
+  "tv-launcher/README.md": {
+    "mtime": 1795681123.864889,
+    "seen": 1795714041.7875354,
+    "ast_hash": "5ebf87b7b716d774e8c6522487bbac48",
+    "semantic_hash": "5ebf87b7b716d774e8c6522487bbac48"
+  },
+  "tv-setup/requirements.txt": {
+    "mtime": 1795681123.884163,
+    "seen": 1795714041.7875354,
+    "ast_hash": "47abd5798ba3fefbde4bc8e73c9ed489",
+    "semantic_hash": "47abd5798ba3fefbde4bc8e73c9ed489"
+  },
+  "screenshots/context.png": {
+    "mtime": 1795681123.8603127,
+    "seen": 1795714041.7875354,
+    "ast_hash": "ff2dd311c2e3677d85aa71ea6fd2ffc4",
+    "semantic_hash": "ff2dd311c2e3677d85aa71ea6fd2ffc4"
+  },
+  "screenshots/grid.png": {
+    "mtime": 1795681123.862312,
+    "seen": 1795714041.7875354,
+    "ast_hash": "14269c53e47aa236c7494a99cb742da8",
+    "semantic_hash": "14269c53e47aa236c7494a99cb742da8"
+  },
+  "screenshots/home.png": {
+    "mtime": 1795681123.863312,
+    "seen": 1795714041.7875354,
+    "ast_hash": "b619e0f713e35b401d57fd4961d3bede",
+    "semantic_hash": "b619e0f713e35b401d57fd4961d3bede"
+  },
+  "screenshots/settings.png": {
+    "mtime": 1795681123.8643124,
+    "seen": 1795714041.7875354,
+    "ast_hash": "ae36c181b423d0a7c4771159d5729921",
+    "semantic_hash": "ae36c181b423d0a7c4771159d5729921"
+  }
+}

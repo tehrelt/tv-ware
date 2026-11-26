@@ -13,7 +13,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 
-PLATFORM_TOOLS_URL = "https://dl.google.com/android/repository/platform-tools-latest-windows.zip"
+PLATFORM_TOOLS_URL = (
+    "https://dl.google.com/android/repository/platform-tools-latest-windows.zip"
+)
 DEFAULT_TOOLS_DIR = Path(__file__).resolve().parents[1] / "tools"
 _ADB_RELATIVE_PATH = Path("platform-tools", "adb.exe")
 _DOWNLOAD_CHUNK_SIZE = 64 * 1024
@@ -98,7 +100,9 @@ def _publish_platform_tools(staged: Path, installed: Path) -> None:
         staged.replace(installed)
         return
 
-    backup_dir = Path(tempfile.mkdtemp(dir=installed.parent, prefix=".platform-tools-backup-"))
+    backup_dir = Path(
+        tempfile.mkdtemp(dir=installed.parent, prefix=".platform-tools-backup-")
+    )
     backup = backup_dir / installed.name
     try:
         installed.replace(backup)
@@ -112,7 +116,9 @@ def _publish_platform_tools(staged: Path, installed: Path) -> None:
         try:
             backup.replace(installed)
         except OSError as exc:
-            raise AdbError(f"Could not restore platform-tools; backup retained at {backup}") from exc
+            raise AdbError(
+                f"Could not restore platform-tools; backup retained at {backup}"
+            ) from exc
         backup_dir.rmdir()
         raise
     _cleanup_directory(backup_dir)
@@ -124,10 +130,15 @@ def download_platform_tools(
     url: str = PLATFORM_TOOLS_URL,
 ) -> Path:
     tools_dir.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(dir=tools_dir, suffix=".zip.part", delete=False) as archive:
+    with tempfile.NamedTemporaryFile(
+        dir=tools_dir, suffix=".zip.part", delete=False
+    ) as archive:
         archive_path = Path(archive.name)
     try:
-        with urllib.request.urlopen(url, timeout=_DOWNLOAD_TIMEOUT) as response, archive_path.open("wb") as output:
+        with (
+            urllib.request.urlopen(url, timeout=_DOWNLOAD_TIMEOUT) as response,
+            archive_path.open("wb") as output,
+        ):
             total = int(response.headers.get("Content-Length") or 0)
             downloaded = 0
             while chunk := response.read(_DOWNLOAD_CHUNK_SIZE):
@@ -141,7 +152,9 @@ def download_platform_tools(
             staged_adb = staging / _ADB_RELATIVE_PATH
             if not staged_adb.is_file():
                 raise AdbError("platform-tools archive did not provide adb.exe")
-            _publish_platform_tools(staged_adb.parent, tools_dir / _ADB_RELATIVE_PATH.parent)
+            _publish_platform_tools(
+                staged_adb.parent, tools_dir / _ADB_RELATIVE_PATH.parent
+            )
         finally:
             _cleanup_directory(staging)
         return tools_dir / _ADB_RELATIVE_PATH
@@ -149,44 +162,72 @@ def download_platform_tools(
         try:
             archive_path.unlink(missing_ok=True)
         except OSError as exc:
-            logging.getLogger(__name__).warning("Could not remove temporary archive %s: %s", archive_path, exc)
+            logging.getLogger(__name__).warning(
+                "Could not remove temporary archive %s: %s", archive_path, exc
+            )
 
 
 def parse_adb_devices(output: str) -> list[UsbOrTcpDevice]:
     devices = []
     for line in output.splitlines():
         fields = line.split()
-        if len(fields) < 2 or fields[0] == "*" or line.strip() == "List of devices attached":
+        if (
+            len(fields) < 2
+            or fields[0] == "*"
+            or line.strip() == "List of devices attached"
+        ):
             continue
         serial, state, *details = fields
         metadata = dict(field.split(":", 1) for field in details if ":" in field)
-        devices.append(UsbOrTcpDevice(
-            serial, state, metadata.get("model", ""), metadata.get("product", ""),
-            metadata.get("transport_id", ""),
-        ))
+        devices.append(
+            UsbOrTcpDevice(
+                serial,
+                state,
+                metadata.get("model", ""),
+                metadata.get("product", ""),
+                metadata.get("transport_id", ""),
+            )
+        )
     return devices
 
 
 def _message(result: AdbResult) -> str:
-    return "\n".join(text for text in (result.stdout.strip(), result.stderr.strip()) if text)
+    return "\n".join(
+        text for text in (result.stdout.strip(), result.stderr.strip()) if text
+    )
 
 
 class AdbClient:
-    def __init__(self, adb_path: Path | None = None, tools_dir: Path = DEFAULT_TOOLS_DIR):
+    def __init__(
+        self, adb_path: Path | None = None, tools_dir: Path = DEFAULT_TOOLS_DIR
+    ):
         self.adb_path = adb_path
         self.tools_dir = tools_dir
 
     def ensure_adb(self) -> Path:
         if self.adb_path is None:
-            self.adb_path = find_adb_executable(self.tools_dir) or download_platform_tools(self.tools_dir)
+            self.adb_path = find_adb_executable(
+                self.tools_dir
+            ) or download_platform_tools(self.tools_dir)
         return self.adb_path
 
-    def run(self, args: list[str], serial: str | None = None, timeout: float = 15.0) -> AdbResult:
-        command = [str(self.ensure_adb()), *(["-s", serial] if serial is not None else []), *args]
+    def run(
+        self, args: list[str], serial: str | None = None, timeout: float = 15.0
+    ) -> AdbResult:
+        command = [
+            str(self.ensure_adb()),
+            *(["-s", serial] if serial is not None else []),
+            *args,
+        ]
         try:
             result = subprocess.run(
-                command, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                timeout=timeout, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
         except subprocess.TimeoutExpired:
             raise AdbError(f"ADB command timed out after {timeout:g} seconds") from None
@@ -206,7 +247,12 @@ class AdbClient:
     def connect(self, target: str) -> tuple[bool, str]:
         message = _message(self.run(["connect", target]))
         text = message.lower()
-        return "connected to" in text and "cannot connect" not in text and "failed to connect" not in text, message
+        return (
+            "connected to" in text
+            and "cannot connect" not in text
+            and "failed to connect" not in text,
+            message,
+        )
 
     def pair(self, target: str, code: str) -> tuple[bool, str]:
         if not code.strip():
@@ -215,8 +261,10 @@ class AdbClient:
         return "successfully paired" in message.lower(), message
 
     def install(self, serial: str, apk_path: Path, downgrade: bool = True) -> AdbResult:
-        flags = ["-r", "-d"] if downgrade else ["-r"]
-        return self.run(["install", *flags, str(apk_path)], serial=serial, timeout=_INSTALL_TIMEOUT)
+        flags = ["-r", "-d", "-g"] if downgrade else ["-r", "-g"]
+        return self.run(
+            ["install", *flags, str(apk_path)], serial=serial, timeout=_INSTALL_TIMEOUT
+        )
 
     def uninstall(self, serial: str, package: str) -> AdbResult:
         return self.run(["uninstall", package], serial=serial)

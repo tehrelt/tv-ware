@@ -10,6 +10,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -66,7 +68,9 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -282,6 +286,7 @@ fun MediaScreen(
                             artwork = media.artwork,
                             title = media.title,
                             compact = true,
+                            modifier = Modifier.align(Alignment.CenterHorizontally),
                         )
 
                         Spacer(modifier = Modifier.height(20.dp))
@@ -579,6 +584,7 @@ internal fun MediaArtworkCard(
     artwork: ImageBitmap?,
     title: String,
     compact: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
     val cardShape = RoundedCornerShape(20.dp)
     val isWide = artwork != null && artwork.width > artwork.height * 1.25f
@@ -589,7 +595,8 @@ internal fun MediaArtworkCard(
         else -> Modifier.size(264.dp)
     }
     Box(
-        modifier = cardModifier
+        modifier = modifier
+            .then(cardModifier)
             .clip(cardShape)
             .background(LauncherColors.SurfaceCard.copy(alpha = 0.85f))
             .border(1.dp, LauncherColors.BorderSubtle, cardShape),
@@ -637,6 +644,7 @@ private fun MediaLyricsPanel(
 
     LaunchedEffect(
         isVisible,
+        lyrics.syncType,
         media.sessionKey,
         media.isPlaying,
         media.positionMs,
@@ -653,7 +661,11 @@ private fun MediaLyricsPanel(
                 nowElapsedMs = SystemClock.elapsedRealtime(),
                 isPlaying = true,
             )
-            delay(120L)
+            if (lyrics.syncType == LyricsSyncType.SYLLABLE) {
+                withFrameNanos { }
+            } else {
+                delay(120L)
+            }
         }
     }
 
@@ -684,14 +696,41 @@ private fun MediaLyricsPanel(
             ) { index, line ->
                 val isActive = index == activeIndex
                 val align = if (line.isOppositeAligned) TextAlign.End else TextAlign.Start
+                val targetScale = if (isActive) 1f else 0.82f
+                val scale by animateFloatAsState(
+                    targetValue = targetScale,
+                    animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+                    label = "lyricScale",
+                )
+                val targetAlpha = when {
+                    isActive -> 1f
+                    lyrics.syncType == LyricsSyncType.STATIC -> 0.82f
+                    activeIndex >= 0 && index < activeIndex -> 0.34f
+                    else -> 0.54f
+                }
+                val lineAlpha by animateFloatAsState(
+                    targetValue = targetAlpha,
+                    animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+                    label = "lyricAlpha",
+                )
+                val scaleModifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                        transformOrigin = TransformOrigin(if (line.isOppositeAligned) 1f else 0f, 0.5f)
+                    }
+
                 if (isActive && lyrics.syncType == LyricsSyncType.SYLLABLE && line.syllables.isNotEmpty()) {
                     val annotated = buildAnnotatedString {
                         line.syllables.forEachIndexed { sylIdx, syl ->
-                            val color = if (currentPosMs >= syl.startMs) {
-                                LauncherColors.TextPrimary
+                            val progress = if (syl.endMs > syl.startMs) {
+                                ((currentPosMs - syl.startMs).toFloat() / (syl.endMs - syl.startMs).toFloat())
+                                    .coerceIn(0f, 1f)
                             } else {
-                                LauncherColors.TextPrimary.copy(alpha = 0.45f)
+                                if (currentPosMs >= syl.startMs) 1f else 0f
                             }
+                            val color = LauncherColors.TextPrimary.copy(alpha = 0.42f + 0.58f * progress)
                             withStyle(SpanStyle(color = color)) {
                                 append(syl.text)
                             }
@@ -708,25 +747,19 @@ private fun MediaLyricsPanel(
                             fontWeight = FontWeight.SemiBold,
                             lineHeight = 36.sp,
                         ),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = scaleModifier,
                     )
                 } else {
-                    val color = when {
-                        isActive -> LauncherColors.TextPrimary
-                        lyrics.syncType == LyricsSyncType.STATIC -> LauncherColors.TextPrimary.copy(alpha = 0.82f)
-                        activeIndex >= 0 && index < activeIndex -> LauncherColors.TextPrimary.copy(alpha = 0.34f)
-                        else -> LauncherColors.TextPrimary.copy(alpha = 0.54f)
-                    }
                     Text(
                         text = line.text,
                         textAlign = align,
                         style = TextStyle(
-                            fontSize = if (isActive) 28.sp else 22.sp,
-                            fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Medium,
-                            lineHeight = if (isActive) 36.sp else 30.sp,
-                            color = color,
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            lineHeight = 36.sp,
+                            color = LauncherColors.TextPrimary.copy(alpha = lineAlpha),
                         ),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = scaleModifier,
                     )
                 }
             }

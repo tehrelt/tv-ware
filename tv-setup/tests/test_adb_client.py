@@ -31,7 +31,10 @@ def make_zip(*entries):
 
 
 def make_bad_crc_zip():
-    data = make_zip(("platform-tools/adb.exe", b"adb"), ("platform-tools/AdbWinApi.dll", b"original DLL data"))
+    data = make_zip(
+        ("platform-tools/adb.exe", b"adb"),
+        ("platform-tools/AdbWinApi.dll", b"original DLL data"),
+    )
     return data.replace(b"original DLL data", b"modified DLL data")
 
 
@@ -50,15 +53,21 @@ class BootstrapTests(unittest.TestCase):
             path.touch()
         path_adb = self.root / "other" / "adb.exe"
         which = Mock(return_value=str(path_adb))
-        self.assertEqual(find_adb_executable(self.tools, which, str(self.root)), local_adb)
+        self.assertEqual(
+            find_adb_executable(self.tools, which, str(self.root)), local_adb
+        )
         which.assert_not_called()
         local_adb.unlink()
-        self.assertEqual(find_adb_executable(self.tools, which, str(self.root)), path_adb)
+        self.assertEqual(
+            find_adb_executable(self.tools, which, str(self.root)), path_adb
+        )
         which.assert_called_once_with("adb")
         with patch.dict(os.environ, {"LOCALAPPDATA": str(self.root)}):
             self.assertEqual(find_adb_executable(self.tools, lambda _: None), sdk_adb)
         sdk_adb.unlink()
-        self.assertIsNone(find_adb_executable(self.tools, lambda _: None, str(self.root)))
+        self.assertIsNone(
+            find_adb_executable(self.tools, lambda _: None, str(self.root))
+        )
 
     def test_safe_extract_zip_rejects_unsafe_members_before_extracting(self):
         symlink = zipfile.ZipInfo("link")
@@ -66,9 +75,17 @@ class BootstrapTests(unittest.TestCase):
         symlink.external_attr = (stat.S_IFLNK | 0o777) << 16
         archive = self.root / "bad.zip"
         dest = self.root / "out"
-        for member in ("../evil.txt", "/evil.txt", r"C:\evil.txt", r"..\evil.txt", symlink):
+        for member in (
+            "../evil.txt",
+            "/evil.txt",
+            r"C:\evil.txt",
+            r"..\evil.txt",
+            symlink,
+        ):
             with self.subTest(member=member):
-                archive.write_bytes(make_zip(("first.txt", "ok"), (member, "../evil.txt")))
+                archive.write_bytes(
+                    make_zip(("first.txt", "ok"), (member, "../evil.txt"))
+                )
                 with self.assertRaises(ValueError):
                     safe_extract_zip(archive, dest)
                 self.assertFalse((self.root / "evil.txt").exists())
@@ -120,8 +137,13 @@ class BootstrapTests(unittest.TestCase):
                 raise PermissionError("publish denied")
             return replace(source, target)
 
-        with patch("urllib.request.urlopen", return_value=response), patch.object(
-            Path, "replace", fail_staging_replace,
+        with (
+            patch("urllib.request.urlopen", return_value=response),
+            patch.object(
+                Path,
+                "replace",
+                fail_staging_replace,
+            ),
         ):
             with self.assertRaisesRegex(PermissionError, "publish denied"):
                 download_platform_tools(self.tools)
@@ -135,9 +157,14 @@ class BootstrapTests(unittest.TestCase):
         response = io.BytesIO(make_zip(("platform-tools/adb.exe", b"new")))
         response.headers = {}
 
-        with patch("urllib.request.urlopen", return_value=response), patch(
-            "shutil.rmtree", side_effect=PermissionError("cleanup denied"),
-        ) as remove, self.assertLogs("tv_setup.adb_client", level="WARNING") as logs:
+        with (
+            patch("urllib.request.urlopen", return_value=response),
+            patch(
+                "shutil.rmtree",
+                side_effect=PermissionError("cleanup denied"),
+            ) as remove,
+            self.assertLogs("tv_setup.adb_client", level="WARNING") as logs,
+        ):
             self.assertEqual(download_platform_tools(self.tools), installed / "adb.exe")
 
         self.assertEqual((installed / "adb.exe").read_bytes(), b"new")
@@ -208,14 +235,21 @@ class AdbClientTests(unittest.TestCase):
             "ABC12345 unauthorized usb:1-2 transport_id:3\r\n"
             "malformed\r\n\r\n"
         )
-        self.assertEqual(parse_adb_devices(raw), [
-            UsbOrTcpDevice("192.168.31.42:5555", "device", "MiTV_AFKR0", "jaws", "2"),
-            UsbOrTcpDevice("ABC12345", "unauthorized", "", "", "3"),
-        ])
+        self.assertEqual(
+            parse_adb_devices(raw),
+            [
+                UsbOrTcpDevice(
+                    "192.168.31.42:5555", "device", "MiTV_AFKR0", "jaws", "2"
+                ),
+                UsbOrTcpDevice("ABC12345", "unauthorized", "", "", "3"),
+            ],
+        )
 
     def test_ensure_adb_honors_explicit_path(self):
         with patch("tv_setup.adb_client.find_adb_executable") as find:
-            self.assertEqual(AdbClient(Path("chosen.exe")).ensure_adb(), Path("chosen.exe"))
+            self.assertEqual(
+                AdbClient(Path("chosen.exe")).ensure_adb(), Path("chosen.exe")
+            )
         find.assert_not_called()
 
     @patch("tv_setup.adb_client.download_platform_tools")
@@ -241,10 +275,17 @@ class AdbClientTests(unittest.TestCase):
     def test_shell_passes_serial_command_timeout_and_flags(self, run):
         run.return_value = subprocess.CompletedProcess([], 1, "out\n", "err\n")
         client = AdbClient(Path("adb.exe"))
-        self.assertEqual(client.shell("ABC", "echo hello", timeout=2.5), AdbResult(1, "out\n", "err\n"))
+        self.assertEqual(
+            client.shell("ABC", "echo hello", timeout=2.5),
+            AdbResult(1, "out\n", "err\n"),
+        )
         run.assert_called_once_with(
             ["adb.exe", "-s", "ABC", "shell", "echo hello"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=2.5,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=2.5,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
 
@@ -263,7 +304,9 @@ class AdbClientTests(unittest.TestCase):
             (f"connected to {target}", "failed to connect", False),
         ):
             with self.subTest(stdout=stdout, stderr=stderr):
-                with patch.object(client, "run", return_value=AdbResult(0, stdout, stderr)) as run:
+                with patch.object(
+                    client, "run", return_value=AdbResult(0, stdout, stderr)
+                ) as run:
                     ok, message = client.connect(target)
                 self.assertIs(ok, expected)
                 self.assertIn(stdout or stderr, message)
@@ -288,17 +331,23 @@ class AdbClientTests(unittest.TestCase):
         result = AdbResult(1, "", "Failure")
         with patch.object(client, "run", return_value=result) as run:
             self.assertIs(client.install("ABC", apk), result)
-            self.assertEqual(run.call_args.args[0], ["install", "-r", "-d", str(apk)])
+            self.assertEqual(
+                run.call_args.args[0], ["install", "-r", "-d", "-g", str(apk)]
+            )
             self.assertEqual(run.call_args.kwargs["serial"], "ABC")
             self.assertIs(client.install("ABC", apk, downgrade=False), result)
-            self.assertEqual(run.call_args.args[0], ["install", "-r", str(apk)])
+            self.assertEqual(run.call_args.args[0], ["install", "-r", "-g", str(apk)])
             self.assertIs(client.uninstall("ABC", "com.example.app"), result)
             run.assert_called_with(["uninstall", "com.example.app"], serial="ABC")
 
     def test_devices_runs_long_listing_and_parses_output(self):
         client = AdbClient(Path("adb.exe"))
-        with patch.object(client, "run", return_value=AdbResult(0, "ABC device\n", "")) as run:
-            self.assertEqual(client.devices(), [UsbOrTcpDevice("ABC", "device", "", "", "")])
+        with patch.object(
+            client, "run", return_value=AdbResult(0, "ABC device\n", "")
+        ) as run:
+            self.assertEqual(
+                client.devices(), [UsbOrTcpDevice("ABC", "device", "", "", "")]
+            )
             run.assert_called_once_with(["devices", "-l"])
             run.return_value = AdbResult(1, "", "daemon error")
             with self.assertRaisesRegex(AdbError, "daemon error"):

@@ -24,37 +24,108 @@ from tv_setup.presets import ANIMATION_KEYS, BLOAT_CATALOG, LAUNCHER_PACKAGE
 
 class GuiSmokeTests(unittest.TestCase):
     def test_palette_contains_graphite_theme_colors(self):
-        expected = {"#0A0A0B", "#1C1C1E", "#2C2C2E", "#F5F5F7", "#A1A1A6", "#0A84FF", "#4CC38A"}
+        expected = {
+            "#0A0A0B",
+            "#1C1C1E",
+            "#2C2C2E",
+            "#F5F5F7",
+            "#A1A1A6",
+            "#0A84FF",
+            "#4CC38A",
+        }
         self.assertTrue(expected <= set(PALETTE.values()))
 
     def test_format_device_label_covers_all_statuses(self):
         cases = [
             (
-                DiscoveredDevice("192.168.31.42", "MiTV-AFKR0", "192.168.31.42", 5555, None, DeviceStatus.CONNECTED, "tcp", "192.168.31.42:5555"),
+                DiscoveredDevice(
+                    "192.168.31.42",
+                    "MiTV-AFKR0",
+                    "192.168.31.42",
+                    5555,
+                    None,
+                    DeviceStatus.CONNECTED,
+                    "tcp",
+                    "192.168.31.42:5555",
+                ),
                 ("192.168.31.42:5555", "MiTV-AFKR0"),
             ),
             (
-                DiscoveredDevice("usb123", "MiBox", "", None, None, DeviceStatus.CONNECTED, "usb", "usb123"),
+                DiscoveredDevice(
+                    "usb123",
+                    "MiBox",
+                    "",
+                    None,
+                    None,
+                    DeviceStatus.CONNECTED,
+                    "usb",
+                    "usb123",
+                ),
                 ("usb123", "MiBox"),
             ),
             (
-                DiscoveredDevice("192.168.31.50", "LivingRoom", "192.168.31.50", 41234, 37123, DeviceStatus.READY, "mdns", None),
+                DiscoveredDevice(
+                    "192.168.31.50",
+                    "LivingRoom",
+                    "192.168.31.50",
+                    41234,
+                    37123,
+                    DeviceStatus.READY,
+                    "mdns",
+                    None,
+                ),
                 ("192.168.31.50:41234", "LivingRoom"),
             ),
             (
-                DiscoveredDevice("192.168.31.77", "192.168.31.77", "192.168.31.77", 5555, None, DeviceStatus.READY, "scan", None),
+                DiscoveredDevice(
+                    "192.168.31.77",
+                    "192.168.31.77",
+                    "192.168.31.77",
+                    5555,
+                    None,
+                    DeviceStatus.READY,
+                    "scan",
+                    None,
+                ),
                 ("192.168.31.77:5555",),
             ),
             (
-                DiscoveredDevice("192.168.31.88", "MiBox", "192.168.31.88", None, 39999, DeviceStatus.NEEDS_PAIRING, "mdns", None),
+                DiscoveredDevice(
+                    "192.168.31.88",
+                    "MiBox",
+                    "192.168.31.88",
+                    None,
+                    39999,
+                    DeviceStatus.NEEDS_PAIRING,
+                    "mdns",
+                    None,
+                ),
                 ("192.168.31.88:39999", "MiBox"),
             ),
             (
-                DiscoveredDevice("192.168.31.12", "192.168.31.12:5555", "192.168.31.12", 5555, None, DeviceStatus.UNAUTHORIZED, "tcp", "192.168.31.12:5555"),
+                DiscoveredDevice(
+                    "192.168.31.12",
+                    "192.168.31.12:5555",
+                    "192.168.31.12",
+                    5555,
+                    None,
+                    DeviceStatus.UNAUTHORIZED,
+                    "tcp",
+                    "192.168.31.12:5555",
+                ),
                 ("192.168.31.12:5555",),
             ),
             (
-                DiscoveredDevice("192.168.31.60", "BedroomTV", "192.168.31.60", None, None, DeviceStatus.DEBUG_OFF, "mdns", None),
+                DiscoveredDevice(
+                    "192.168.31.60",
+                    "BedroomTV",
+                    "192.168.31.60",
+                    None,
+                    None,
+                    DeviceStatus.DEBUG_OFF,
+                    "mdns",
+                    None,
+                ),
                 ("192.168.31.60", "BedroomTV"),
             ),
         ]
@@ -68,13 +139,26 @@ class GuiSmokeTests(unittest.TestCase):
                     self.assertIn(part, label)
                 labels.append((device.status, label))
 
-        status_suffixes = {status: label.rsplit("·", 1)[-1].strip() for status, label in labels}
+        status_suffixes = {
+            status: label.rsplit("·", 1)[-1].strip() for status, label in labels
+        }
         self.assertEqual(len(set(status_suffixes.values())), len(DeviceStatus))
 
     def test_parse_manual_target_defaults_port_and_validates(self):
-        self.assertEqual(parse_manual_target("192.168.31.42"), ("192.168.31.42", 5555, False))
-        self.assertEqual(parse_manual_target("192.168.31.42:41234"), ("192.168.31.42", 41234, True))
-        for bad in ("", "   ", "192.168.31.42:0", "192.168.31.42:70000", "192.168.31.42:abc", "bad host:5555"):
+        self.assertEqual(
+            parse_manual_target("192.168.31.42"), ("192.168.31.42", 5555, False)
+        )
+        self.assertEqual(
+            parse_manual_target("192.168.31.42:41234"), ("192.168.31.42", 41234, True)
+        )
+        for bad in (
+            "",
+            "   ",
+            "192.168.31.42:0",
+            "192.168.31.42:70000",
+            "192.168.31.42:abc",
+            "bad host:5555",
+        ):
             with self.subTest(bad=bad):
                 with self.assertRaises(ValueError):
                     parse_manual_target(bad)
@@ -109,7 +193,9 @@ class GuiSmokeTests(unittest.TestCase):
             app_cls.assert_called_once_with()
             app_cls.return_value.mainloop.assert_called_once_with()
 
-    def test_apply_worker_re_inspects_after_install_and_handles_signature_conflict(self):
+    def test_apply_worker_re_inspects_after_install_and_handles_signature_conflict(
+        self,
+    ):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         root = Path(temp.name)
@@ -121,19 +207,44 @@ class GuiSmokeTests(unittest.TestCase):
         custom_apk.write_bytes(b"custom")
 
         initial_info = DeviceInspection(
-            "SER1", "MiTV", "14", 34, "com.google.android.apps.tv.launcherx/.MainActivity",
-            dict.fromkeys(ANIMATION_KEYS, "1.0"), False,
-            {"com.google.android.apps.tv.launcherx", BLOAT_CATALOG[0].package}, set(),
+            "SER1",
+            "MiTV",
+            "14",
+            34,
+            "com.google.android.apps.tv.launcherx/.MainActivity",
+            dict.fromkeys(ANIMATION_KEYS, "1.0"),
+            False,
+            {"com.google.android.apps.tv.launcherx", BLOAT_CATALOG[0].package},
+            set(),
         )
         post_install_info = DeviceInspection(
-            "SER1", "MiTV", "14", 34, "com.google.android.apps.tv.launcherx/.MainActivity",
-            dict.fromkeys(ANIMATION_KEYS, "1.0"), False,
-            {"com.google.android.apps.tv.launcherx", LAUNCHER_PACKAGE, BLOAT_CATALOG[0].package}, set(),
+            "SER1",
+            "MiTV",
+            "14",
+            34,
+            "com.google.android.apps.tv.launcherx/.MainActivity",
+            dict.fromkeys(ANIMATION_KEYS, "1.0"),
+            False,
+            {
+                "com.google.android.apps.tv.launcherx",
+                LAUNCHER_PACKAGE,
+                BLOAT_CATALOG[0].package,
+            },
+            set(),
         )
         post_apply_info = DeviceInspection(
-            "SER1", "MiTV", "14", 34, f"{LAUNCHER_PACKAGE}/.MainActivity",
-            dict.fromkeys(ANIMATION_KEYS, "0.25"), False,
-            {"com.google.android.apps.tv.launcherx", LAUNCHER_PACKAGE, BLOAT_CATALOG[0].package},
+            "SER1",
+            "MiTV",
+            "14",
+            34,
+            f"{LAUNCHER_PACKAGE}/.MainActivity",
+            dict.fromkeys(ANIMATION_KEYS, "0.25"),
+            False,
+            {
+                "com.google.android.apps.tv.launcherx",
+                LAUNCHER_PACKAGE,
+                BLOAT_CATALOG[0].package,
+            },
             {BLOAT_CATALOG[0].package},
         )
 
@@ -151,39 +262,73 @@ class GuiSmokeTests(unittest.TestCase):
             app._refresh_inspection_ui(initial_info)
 
             selected = [
-                LocalApk("tv-launcher.apk", launcher_apk, LAUNCHER_PACKAGE, "launcher-latest", None),
+                LocalApk(
+                    "tv-launcher.apk",
+                    launcher_apk,
+                    LAUNCHER_PACKAGE,
+                    "launcher-latest",
+                    None,
+                ),
                 LocalApk("Custom.apk", custom_apk, None, None, None),
             ]
             plan = ApplyPlan(True, False, True, False, [BLOAT_CATALOG[0].package])
 
             with (
-                patch("tv_setup.gui.install_apk", side_effect=[SignatureConflictError("mismatch"), SignatureConflictError("mismatch")]) as install_mock,
+                patch(
+                    "tv_setup.gui.install_apk",
+                    side_effect=[
+                        SignatureConflictError("mismatch"),
+                        SignatureConflictError("mismatch"),
+                    ],
+                ) as install_mock,
                 patch("tv_setup.gui.reinstall_after_uninstall") as reinstall_mock,
-                patch("tv_setup.gui.inspect_device", side_effect=[post_install_info, post_apply_info]) as inspect_mock,
-                patch("tv_setup.gui.apply_optimizations", return_value=ApplyReport(["ok"], [])) as apply_mock,
+                patch(
+                    "tv_setup.gui.inspect_device",
+                    side_effect=[post_install_info, post_apply_info],
+                ) as inspect_mock,
+                patch(
+                    "tv_setup.gui.apply_optimizations",
+                    return_value=ApplyReport(["ok"], []),
+                ) as apply_mock,
                 patch.object(app, "_ask_yes_no_sync", return_value=True) as ask_mock,
                 patch.object(app, "_ui_call", side_effect=lambda fn: fn()),
             ):
-                app._run_apply_worker("192.168.31.42:5555", initial_info, selected, plan)
+                app._run_apply_worker(
+                    "192.168.31.42:5555", initial_info, selected, plan
+                )
 
             self.assertEqual(install_mock.call_count, 2)
             ask_mock.assert_called_once()
-            reinstall_mock.assert_called_once_with(app.adb, "192.168.31.42:5555", LAUNCHER_PACKAGE, launcher_apk)
+            reinstall_mock.assert_called_once_with(
+                app.adb, "192.168.31.42:5555", LAUNCHER_PACKAGE, launcher_apk
+            )
             self.assertEqual(inspect_mock.call_count, 2)
             self.assertEqual(apply_mock.call_args.args[2], post_install_info)
             self.assertEqual(app._inspection, post_apply_info)
-            self.assertIn("Отключён", app._bloat_widgets[BLOAT_CATALOG[0].package].cget("text"))
+            self.assertIn(
+                "Отключён", app._bloat_widgets[BLOAT_CATALOG[0].package].cget("text")
+            )
 
             # Declining signature conflict prompt skips reinstall_after_uninstall.
             with (
-                patch("tv_setup.gui.install_apk", side_effect=SignatureConflictError("mismatch")),
+                patch(
+                    "tv_setup.gui.install_apk",
+                    side_effect=SignatureConflictError("mismatch"),
+                ),
                 patch("tv_setup.gui.reinstall_after_uninstall") as declined_reinstall,
-                patch("tv_setup.gui.inspect_device", side_effect=[post_install_info, post_apply_info]),
-                patch("tv_setup.gui.apply_optimizations", return_value=ApplyReport([], [])),
+                patch(
+                    "tv_setup.gui.inspect_device",
+                    side_effect=[post_install_info, post_apply_info],
+                ),
+                patch(
+                    "tv_setup.gui.apply_optimizations", return_value=ApplyReport([], [])
+                ),
                 patch.object(app, "_ask_yes_no_sync", return_value=False),
                 patch.object(app, "_ui_call", side_effect=lambda fn: fn()),
             ):
-                app._run_apply_worker("192.168.31.42:5555", initial_info, [selected[0]], plan)
+                app._run_apply_worker(
+                    "192.168.31.42:5555", initial_info, [selected[0]], plan
+                )
             declined_reinstall.assert_not_called()
 
     def test_rollback_refreshes_inspection_and_main_module_delegates(self):
@@ -191,14 +336,26 @@ class GuiSmokeTests(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         root = Path(temp.name)
         disabled_info = DeviceInspection(
-            "SER1", "MiTV", "14", 34, f"{LAUNCHER_PACKAGE}/.MainActivity",
-            dict.fromkeys(ANIMATION_KEYS, "0.25"), True,
-            {LAUNCHER_PACKAGE, BLOAT_CATALOG[0].package}, {BLOAT_CATALOG[0].package},
+            "SER1",
+            "MiTV",
+            "14",
+            34,
+            f"{LAUNCHER_PACKAGE}/.MainActivity",
+            dict.fromkeys(ANIMATION_KEYS, "0.25"),
+            True,
+            {LAUNCHER_PACKAGE, BLOAT_CATALOG[0].package},
+            {BLOAT_CATALOG[0].package},
         )
         restored_info = DeviceInspection(
-            "SER1", "MiTV", "14", 34, "com.google.android.apps.tv.launcherx/.MainActivity",
-            dict.fromkeys(ANIMATION_KEYS, "1.0"), False,
-            {LAUNCHER_PACKAGE, BLOAT_CATALOG[0].package}, set(),
+            "SER1",
+            "MiTV",
+            "14",
+            34,
+            "com.google.android.apps.tv.launcherx/.MainActivity",
+            dict.fromkeys(ANIMATION_KEYS, "1.0"),
+            False,
+            {LAUNCHER_PACKAGE, BLOAT_CATALOG[0].package},
+            set(),
         )
 
         with patch("tv_setup.gui.find_adb_executable", return_value=Path("adb.exe")):
@@ -212,7 +369,9 @@ class GuiSmokeTests(unittest.TestCase):
             self.addCleanup(app.destroy)
             app._connected_serial = "192.168.31.42:5555"
             app._refresh_inspection_ui(disabled_info)
-            self.assertIn("Отключён", app._bloat_widgets[BLOAT_CATALOG[0].package].cget("text"))
+            self.assertIn(
+                "Отключён", app._bloat_widgets[BLOAT_CATALOG[0].package].cget("text")
+            )
 
             def run_sync(target):
                 target()
@@ -221,14 +380,19 @@ class GuiSmokeTests(unittest.TestCase):
             with (
                 patch.object(app, "_start_worker", side_effect=run_sync),
                 patch.object(app, "_ui_call", side_effect=lambda fn: fn()),
-                patch("tv_setup.gui.rollback_device", return_value=ApplyReport(["pm enable"], [])) as rb_mock,
+                patch(
+                    "tv_setup.gui.rollback_device",
+                    return_value=ApplyReport(["pm enable"], []),
+                ) as rb_mock,
                 patch("tv_setup.gui.inspect_device", return_value=restored_info),
             ):
                 app.start_rollback()
 
             rb_mock.assert_called_once()
             self.assertEqual(app._inspection, restored_info)
-            self.assertIn("Активен", app._bloat_widgets[BLOAT_CATALOG[0].package].cget("text"))
+            self.assertIn(
+                "Активен", app._bloat_widgets[BLOAT_CATALOG[0].package].cget("text")
+            )
 
             # Verify worker-thread messagebox marshaling uses main thread via after(0, ...).
             caller_threads = []
@@ -277,22 +441,36 @@ class GuiSmokeTests(unittest.TestCase):
                 patch.object(app, "_start_connect") as connect_mock,
             ):
                 with self.subTest("ip_without_explicit_port_and_pair_port_uses_mdns"):
-                    app._handle_manual_connect("192.168.31.42", 5555, False, 37123, "123456")
-                    pair_mock.assert_called_once_with("192.168.31.42", 37123, "123456", None)
+                    app._handle_manual_connect(
+                        "192.168.31.42", 5555, False, 37123, "123456"
+                    )
+                    pair_mock.assert_called_once_with(
+                        "192.168.31.42", 37123, "123456", None
+                    )
                     connect_mock.assert_not_called()
 
                 pair_mock.reset_mock()
                 connect_mock.reset_mock()
-                with self.subTest("ip_with_explicit_port_and_pair_port_uses_explicit_port"):
-                    app._handle_manual_connect("192.168.31.42", 41234, True, 37123, "123456")
-                    pair_mock.assert_called_once_with("192.168.31.42", 37123, "123456", 41234)
+                with self.subTest(
+                    "ip_with_explicit_port_and_pair_port_uses_explicit_port"
+                ):
+                    app._handle_manual_connect(
+                        "192.168.31.42", 41234, True, 37123, "123456"
+                    )
+                    pair_mock.assert_called_once_with(
+                        "192.168.31.42", 37123, "123456", 41234
+                    )
                     connect_mock.assert_not_called()
 
                 pair_mock.reset_mock()
                 connect_mock.reset_mock()
                 with self.subTest("ip_with_explicit_pairing_port_only_uses_mdns"):
-                    app._handle_manual_connect("192.168.31.42", 37123, True, None, "123456")
-                    pair_mock.assert_called_once_with("192.168.31.42", 37123, "123456", None)
+                    app._handle_manual_connect(
+                        "192.168.31.42", 37123, True, None, "123456"
+                    )
+                    pair_mock.assert_called_once_with(
+                        "192.168.31.42", 37123, "123456", None
+                    )
                     connect_mock.assert_not_called()
 
                 pair_mock.reset_mock()
@@ -318,7 +496,14 @@ class GuiSmokeTests(unittest.TestCase):
             self.addCleanup(app.destroy)
 
             device = DiscoveredDevice(
-                "192.168.31.88", "MiBox", "192.168.31.88", None, 39999, DeviceStatus.NEEDS_PAIRING, "mdns", None,
+                "192.168.31.88",
+                "MiBox",
+                "192.168.31.88",
+                None,
+                39999,
+                DeviceStatus.NEEDS_PAIRING,
+                "mdns",
+                None,
             )
             pairing = _PairingDialog(app, device, lambda _code, _port: None)
             pairing.withdraw()
@@ -412,8 +597,15 @@ class GuiSmokeTests(unittest.TestCase):
         apks_dir.mkdir()
         launcher_apk = apks_dir / "tv-launcher.apk"
         info = DeviceInspection(
-            "SER1", "MiTV", "14", 34, f"{LAUNCHER_PACKAGE}/.MainActivity",
-            {"window_animation_scale": "0.25"}, True, {LAUNCHER_PACKAGE}, set(),
+            "SER1",
+            "MiTV",
+            "14",
+            34,
+            f"{LAUNCHER_PACKAGE}/.MainActivity",
+            {"window_animation_scale": "0.25"},
+            True,
+            {LAUNCHER_PACKAGE},
+            set(),
         )
 
         with patch("tv_setup.gui.find_adb_executable", return_value=Path("adb.exe")):
@@ -435,7 +627,9 @@ class GuiSmokeTests(unittest.TestCase):
             with (
                 patch.object(app.adb, "ensure_adb", return_value=Path("adb.exe")),
                 patch.object(app.adb, "shell") as shell_mock,
-                patch("tv_setup.gui.download_launcher_apk", side_effect=fake_download) as dl_mock,
+                patch(
+                    "tv_setup.gui.download_launcher_apk", side_effect=fake_download
+                ) as dl_mock,
                 patch("tv_setup.gui.install_apk") as install_mock,
                 patch("tv_setup.gui.inspect_device", return_value=info) as inspect_mock,
                 patch.object(app, "_ui_call", side_effect=lambda fn: fn()),
@@ -443,9 +637,108 @@ class GuiSmokeTests(unittest.TestCase):
                 app._run_update_launcher_worker("192.168.31.42:5555")
 
             dl_mock.assert_called_once()
-            install_mock.assert_called_once_with(app.adb, "192.168.31.42:5555", launcher_apk)
-            inspect_mock.assert_called_once_with(app.adb, "192.168.31.42:5555")
-            shell_mock.assert_called_once_with("192.168.31.42:5555", "input keyevent KEYCODE_HOME")
+            install_mock.assert_called_once_with(
+                app.adb, "192.168.31.42:5555", launcher_apk
+            )
+            self.assertEqual(inspect_mock.call_count, 2)
+            shell_mock.assert_any_call(
+                "192.168.31.42:5555", "input keyevent KEYCODE_HOME"
+            )
+
+    def test_update_launcher_restores_home_listener_and_screensaver_when_reset(self):
+        from tv_setup.adb_client import AdbResult
+        from tv_setup.presets import (
+            LAUNCHER_ACTIVITY,
+            LAUNCHER_DREAM_COMPONENT,
+            LAUNCHER_NOTIFICATION_LISTENER,
+        )
+
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        apks_dir = root / "apks"
+        apks_dir.mkdir()
+        launcher_apk = apks_dir / "tv-launcher.apk"
+        before = DeviceInspection(
+            "SER1",
+            "MiTV",
+            "14",
+            34,
+            LAUNCHER_ACTIVITY,
+            {"window_animation_scale": "0.25"},
+            True,
+            {LAUNCHER_PACKAGE},
+            set(),
+            screensaver_settings={"screensaver_components": LAUNCHER_DREAM_COMPONENT},
+        )
+        reset = DeviceInspection(
+            "SER1",
+            "MiTV",
+            "14",
+            34,
+            "android/com.android.internal.app.ResolverActivity",
+            {"window_animation_scale": "0.25"},
+            True,
+            {LAUNCHER_PACKAGE},
+            set(),
+            screensaver_settings={"screensaver_components": "null"},
+        )
+
+        with patch("tv_setup.gui.find_adb_executable", return_value=Path("adb.exe")):
+            app = TvSetupApp(
+                tools_dir=root / "tools",
+                apks_dir=apks_dir,
+                state_dir=root / "state",
+                auto_discover=False,
+            )
+            app.withdraw()
+            self.addCleanup(app.destroy)
+            app._connected_serial = "192.168.31.42:5555"
+            app._inspection = before
+
+            def fake_download(target_dir, progress_cb=None, log_cb=None):
+                launcher_apk.write_bytes(b"apk")
+                return launcher_apk
+
+            commands: list[str] = []
+            listener_reads = iter(
+                [
+                    AdbResult(0, f"{LAUNCHER_NOTIFICATION_LISTENER}\n", ""),
+                    AdbResult(0, "null\n", ""),
+                ]
+            )
+
+            def fake_shell(serial, command):
+                commands.append(command)
+                if command == "settings get secure enabled_notification_listeners":
+                    return next(listener_reads)
+                return AdbResult(0, "", "")
+
+            with (
+                patch.object(app.adb, "ensure_adb", return_value=Path("adb.exe")),
+                patch.object(app.adb, "shell", side_effect=fake_shell),
+                patch("tv_setup.gui.download_launcher_apk", side_effect=fake_download),
+                patch("tv_setup.gui.install_apk"),
+                patch(
+                    "tv_setup.gui.inspect_device", side_effect=[before, reset, before]
+                ),
+                patch.object(app, "_ui_call", side_effect=lambda fn: fn()),
+            ):
+                app._run_update_launcher_worker("192.168.31.42:5555")
+
+            self.assertIn(
+                f"cmd package set-home-activity --user current {LAUNCHER_ACTIVITY}",
+                commands,
+            )
+            self.assertIn(
+                f"cmd notification allow_listener {LAUNCHER_NOTIFICATION_LISTENER}",
+                commands,
+            )
+            self.assertIn(
+                f"settings put secure screensaver_components {LAUNCHER_DREAM_COMPONENT}",
+                commands,
+            )
+            self.assertIn("input keyevent KEYCODE_HOME", commands)
 
 
 if __name__ == "__main__":
