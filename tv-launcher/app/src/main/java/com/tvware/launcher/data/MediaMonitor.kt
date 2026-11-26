@@ -338,6 +338,7 @@ class MediaMonitor(
         }
 
         if (artworkKey != null && cachedArtwork == null) {
+            Log.i("MediaMonitor", "Loading artwork: title=$title uri=$artworkUri hasBitmap=${embeddedBitmap != null}")
             scheduleArtworkLoad(artworkKey, embeddedBitmap, artworkUri)
         } else {
             cancelArtworkLoad()
@@ -395,8 +396,8 @@ class MediaMonitor(
         artworkJob = scope.launch {
             try {
                 val loaded = withContext(Dispatchers.IO) {
-                    val fromBitmap = embeddedBitmap?.let(::scaleBitmapIfNeeded)
-                    fromBitmap ?: artworkUri?.let(::loadBitmapFromUri)
+                    val fromUri = artworkUri?.let(::loadBitmapFromUri)
+                    fromUri ?: embeddedBitmap?.let(::scaleBitmapIfNeeded)
                 }
                 if (loaded == null) {
                     Log.w("MediaMonitor", "Failed to load artwork for key=$artworkKey uri=$artworkUri")
