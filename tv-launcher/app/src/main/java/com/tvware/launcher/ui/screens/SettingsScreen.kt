@@ -46,6 +46,7 @@ fun SettingsScreen(
     onSelectGridColumns: (Int) -> Unit,
     onSetMediaScreenEnabled: (Boolean) -> Unit,
     onRequestMediaAccess: () -> Unit,
+    onSetAutoStartHapp: (Boolean) -> Unit,
     onUnhideApp: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -196,6 +197,35 @@ fun SettingsScreen(
                             ),
                         )
                     }
+                }
+            }
+
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SettingsSectionTitle("Автозапуск Happ")
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OptionChip(
+                            label = "Включён",
+                            selected = uiState.autoStartHapp,
+                            onClick = { onSetAutoStartHapp(true) },
+                        )
+                        OptionChip(
+                            label = "Выключен",
+                            selected = !uiState.autoStartHapp,
+                            onClick = { onSetAutoStartHapp(false) },
+                        )
+                    }
+                    Text(
+                        text = "Подключает выбранный профиль Happ при запуске лаунчера",
+                        style = TextStyle(
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = LauncherColors.TextMuted,
+                        ),
+                    )
                 }
             }
 

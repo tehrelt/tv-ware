@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
+import android.net.Uri
 import android.os.Build
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -89,11 +90,38 @@ class AppRepository(
         }
     }
 
+    fun isHappInstalled(): Boolean = findHappPackage() != null
+
     fun launchHapp(): Boolean {
-        for (pkg in HAPP_PACKAGES) {
-            if (launchPackage(pkg)) return true
+        val pkg = findHappPackage() ?: return false
+        return launchPackage(pkg)
+    }
+
+    fun connectHapp(): Boolean {
+        val pkg = findHappPackage() ?: return false
+        val silentIntent = Intent(Intent.ACTION_VIEW, Uri.parse(HAPP_CONNECT_SILENT_URI))
+            .setPackage(pkg)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val uiIntent = Intent(Intent.ACTION_VIEW, Uri.parse(HAPP_CONNECT_UI_URI))
+            .setPackage(pkg)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val uri = selectHappConnectUri(
+            canConnectWithoutUi = pm.resolveActivity(silentIntent, 0) != null,
+            canConnectWithUi = pm.resolveActivity(uiIntent, 0) != null,
+        )
+        val target = when (uri) {
+            HAPP_CONNECT_SILENT_URI -> silentIntent
+            HAPP_CONNECT_UI_URI -> uiIntent
+            else -> return launchPackage(pkg)
         }
-        return false
+        return runCatching {
+            context.startActivity(target)
+            true
+        }.getOrDefault(false)
+    }
+
+    private fun findHappPackage(): String? = HAPP_PACKAGES.firstOrNull { pkg ->
+        pm.getLeanbackLaunchIntentForPackage(pkg) != null || pm.getLaunchIntentForPackage(pkg) != null
     }
 
     fun launchPackage(packageName: String): Boolean {

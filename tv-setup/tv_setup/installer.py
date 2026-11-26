@@ -268,6 +268,38 @@ def _download_file(
         part_path.unlink(missing_ok=True)
 
 
+def _download_source(
+    source: RepoSource,
+    apks_dir: Path,
+    versions_meta: dict[str, dict],
+    force: bool,
+    progress_cb: Callable[[str, int, int], None] | None,
+    log_cb: Callable[[str], None] | None,
+) -> tuple[dict[str, dict], Path]:
+    _log(log_cb, f"Checking {source.label} release...")
+    release_json = _fetch_release_json(source.release_url)
+    tag_name, asset_id, updated_at, download_url = select_release_asset(release_json, source.asset_name)
+    target_path = apks_dir / source.local_filename
+    if not force and not needs_download(versions_meta, source.key, tag_name, asset_id, updated_at, target_path):
+        _log(log_cb, f"{source.local_filename} is up to date ({tag_name})")
+        return versions_meta, target_path
+
+    _log(log_cb, f"Downloading {source.local_filename} ({tag_name})...")
+    _download_file(download_url, target_path, source.key, progress_cb)
+    updated_meta = {
+        **versions_meta,
+        source.key: {
+            "tag_name": tag_name,
+            "asset_id": asset_id,
+            "updated_at": updated_at,
+            "downloaded_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        },
+    }
+    _save_versions(apks_dir, updated_meta)
+    _log(log_cb, f"Downloaded {source.local_filename} ({tag_name})")
+    return updated_meta, target_path
+
+
 def download_repo_apks(
     apks_dir: Path,
     force: bool = False,
@@ -278,29 +310,22 @@ def download_repo_apks(
     versions_meta = _load_versions(apks_dir)
 
     for source in REPO_SOURCES:
-        _log(log_cb, f"Checking {source.label} release...")
-        release_json = _fetch_release_json(source.release_url)
-        tag_name, asset_id, updated_at, download_url = select_release_asset(release_json, source.asset_name)
-        target_path = apks_dir / source.local_filename
-        if not force and not needs_download(versions_meta, source.key, tag_name, asset_id, updated_at, target_path):
-            _log(log_cb, f"{source.local_filename} is up to date ({tag_name})")
-            continue
-
-        _log(log_cb, f"Downloading {source.local_filename} ({tag_name})...")
-        _download_file(download_url, target_path, source.key, progress_cb)
-        versions_meta = {
-            **versions_meta,
-            source.key: {
-                "tag_name": tag_name,
-                "asset_id": asset_id,
-                "updated_at": updated_at,
-                "downloaded_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            },
-        }
-        _save_versions(apks_dir, versions_meta)
-        _log(log_cb, f"Downloaded {source.local_filename} ({tag_name})")
+        versions_meta, _ = _download_source(source, apks_dir, versions_meta, force, progress_cb, log_cb)
 
     return scan_local_apks(apks_dir)
+
+
+def download_launcher_apk(
+    apks_dir: Path,
+    force: bool = False,
+    progress_cb: Callable[[str, int, int], None] | None = None,
+    log_cb: Callable[[str], None] | None = None,
+) -> Path:
+    apks_dir.mkdir(parents=True, exist_ok=True)
+    versions_meta = _load_versions(apks_dir)
+    source = next(item for item in REPO_SOURCES if item.key == "tv-launcher")
+    _, target_path = _download_source(source, apks_dir, versions_meta, force, progress_cb, log_cb)
+    return target_path
 
 
 def _validate_apk_filename(name: str) -> str:

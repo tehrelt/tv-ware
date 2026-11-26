@@ -11,6 +11,7 @@ from tv_setup.installer import (
     LocalApk,
     RepoSource,
     SignatureConflictError,
+    download_launcher_apk,
     download_repo_apks,
     import_local_apk,
     install_apk,
@@ -452,6 +453,31 @@ class InstallerTests(unittest.TestCase):
                 with self.assertRaises(AdbError):
                     reinstall_after_uninstall(adb, "SER1", "com.tvware.launcher", Path("tv-launcher.apk"))
                 adb.install.assert_not_called()
+
+    def test_download_launcher_apk_fetches_only_launcher(self):
+        launcher_release = {
+            "tag_name": "launcher-latest",
+            "assets": [{
+                "id": 905,
+                "name": "tv-launcher.apk",
+                "updated_at": "2026-11-26T12:00:00Z",
+                "browser_download_url": "https://github.com/tehrelt/tv-ware/releases/download/launcher-latest/tv-launcher.apk",
+            }],
+        }
+
+        def fake_urlopen(req, timeout=None):
+            if req.full_url == REPO_SOURCES[0].release_url:
+                return _json_response(launcher_release, req.full_url)
+            if req.full_url == launcher_release["assets"][0]["browser_download_url"]:
+                return _bytes_response(b"LAUNCHER_NEW")
+            raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            apk_path = download_launcher_apk(self.apks_dir)
+
+        self.assertEqual(apk_path, self.apks_dir / "tv-launcher.apk")
+        self.assertEqual(apk_path.read_bytes(), b"LAUNCHER_NEW")
+        self.assertFalse((self.apks_dir / "Happ.apk").exists())
 
 
 if __name__ == "__main__":

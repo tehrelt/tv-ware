@@ -2,4 +2,5 @@
 <resources>
     <string name="app_name">TV Launcher</string>
     <string name="media_listener_label">TV Launcher Медиа</string>
+    <string name="dream_service_label">TV Launcher Заставка</string>
 </resources>

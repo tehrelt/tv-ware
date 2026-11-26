@@ -7,7 +7,16 @@ from unittest.mock import patch
 
 from tv_setup.adb_client import AdbError, AdbResult
 from tv_setup.optimizer import ApplyPlan, DeviceInspection, apply_optimizations, inspect_device, rollback_device
-from tv_setup.presets import ANIMATION_KEYS, BLOAT_CATALOG, HAPP_PACKAGES, LAUNCHER_ACTIVITY, LAUNCHER_PACKAGE, STOCK_LAUNCHER_PACKAGES
+from tv_setup.presets import (
+    ANIMATION_KEYS,
+    BLOAT_CATALOG,
+    HAPP_PACKAGES,
+    LAUNCHER_ACTIVITY,
+    LAUNCHER_DREAM_COMPONENT,
+    LAUNCHER_PACKAGE,
+    SCREENSAVER_KEYS,
+    STOCK_LAUNCHER_PACKAGES,
+)
 
 STOCK = "com.google.android.apps.tv.launcherx"
 HOME = f"{STOCK}/.MainActivity"
@@ -93,12 +102,14 @@ class OptimizerTests(unittest.TestCase):
             "getprop ro.serialno": output("SER123\n"),
             RESOLVE: output(f"priority=0\n{HOME}\n"),
             **{f"settings get global {key}": output("1.0\n") for key in ANIMATION_KEYS},
+            **{f"settings get secure {key}": output("null\n") for key in SCREENSAVER_KEYS},
             WHITELIST: output("system,su.happ.proxyutility,10123\n"),
             "pm list packages -d": output(f"package:{ADS}\n"),
             "pm list packages": output(f"package:{GAMES}\npackage:{ADS}\nnoise\n"),
         })
         self.assertEqual(inspect_device(adb, SERIAL), replace(
             self.info, happ_whitelisted=True, installed_packages={GAMES, ADS}, disabled_packages={ADS},
+            screensaver_settings=dict.fromkeys(SCREENSAVER_KEYS, "null"),
         ))
 
     def test_missing_home_scales_and_serial_fallback(self):
@@ -509,3 +520,53 @@ class OptimizerTests(unittest.TestCase):
                 self.assertFalse(rollback_device(late, SERIAL, self.state).errors)
                 restore = "pm enable " if method == "disable" else "cmd package install-existing "
                 self.assertIn(restore + ADS, late.commands)
+
+    def test_inspect_apply_and_rollback_idle_screensaver(self):
+        adb = FakeAdb({
+            "getprop ro.product.model": output("MiTV-AFKR0\n"),
+            "getprop ro.build.version.release": output("14\n"),
+            "getprop ro.build.version.sdk": output("34\n"),
+            "getprop ro.serialno": output("SER123\n"),
+            RESOLVE: output(f"priority=0\n{HOME}\n"),
+            **{f"settings get global {key}": output("1.0\n") for key in ANIMATION_KEYS},
+            "settings get secure screensaver_enabled": output("0\n"),
+            "settings get secure screensaver_components": output("com.google.android.backdrop/.Backdrop\n"),
+            "settings get secure screensaver_activate_on_sleep": output("null\n"),
+            "settings get secure screensaver_activate_on_dock": output("1\n"),
+            WHITELIST: output("system\n"),
+            "pm list packages -d": output(""),
+            "pm list packages": output(f"package:{LAUNCHER_PACKAGE}\n"),
+        })
+        info = inspect_device(adb, SERIAL)
+        self.assertEqual(info.screensaver_settings, {
+            "screensaver_enabled": "0",
+            "screensaver_components": "com.google.android.backdrop/.Backdrop",
+            "screensaver_activate_on_sleep": "null",
+            "screensaver_activate_on_dock": "1",
+        })
+        adb.commands.clear()
+        report = self.apply(adb, ApplyPlan(False, False, False, False, [], set_idle_screensaver=True), info)
+        self.assertFalse(report.errors)
+        self.assertEqual(adb.commands, [
+            "settings put secure screensaver_enabled 1",
+            f"settings put secure screensaver_components {LAUNCHER_DREAM_COMPONENT}",
+            "settings put secure screensaver_activate_on_sleep 1",
+            "settings put secure screensaver_activate_on_dock 1",
+        ])
+        adb.commands.clear()
+        rb = rollback_device(adb, SERIAL, self.state)
+        self.assertFalse(rb.errors)
+        self.assertEqual(adb.commands[-4:], [
+            "settings put secure screensaver_enabled 0",
+            "settings put secure screensaver_components com.google.android.backdrop/.Backdrop",
+            "settings delete secure screensaver_activate_on_sleep",
+            "settings put secure screensaver_activate_on_dock 1",
+        ])
+
+    def test_idle_screensaver_requires_installed_launcher(self):
+        adb = FakeAdb()
+        info = replace(self.info, installed_packages={GAMES})
+        report = self.apply(adb, ApplyPlan(False, False, False, False, [], set_idle_screensaver=True), info)
+        self.assertTrue(any(LAUNCHER_PACKAGE in err for err in report.errors))
+        self.assertEqual(adb.commands, [])
+

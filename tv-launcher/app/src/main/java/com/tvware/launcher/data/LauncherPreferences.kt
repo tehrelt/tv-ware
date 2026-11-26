@@ -30,6 +30,7 @@ data class LauncherSettings(
     val backgroundMode: BackgroundMode = BackgroundMode.GRADIENT,
     val customBackgroundPath: String? = null,
     val mediaScreenEnabled: Boolean = true,
+    val autoStartHapp: Boolean = true,
     val initializedDefaults: Boolean = false,
 )
 
@@ -46,6 +47,7 @@ class LauncherPreferences(private val context: Context) {
                 ?: BackgroundMode.GRADIENT,
             customBackgroundPath = prefs[KEY_CUSTOM_BG_PATH]?.takeIf { it.isNotBlank() },
             mediaScreenEnabled = prefs[KEY_MEDIA_SCREEN_ENABLED] ?: true,
+            autoStartHapp = prefs[KEY_AUTO_START_HAPP] ?: true,
             initializedDefaults = prefs[KEY_INITIALIZED_DEFAULTS] ?: false,
         )
     }
@@ -125,6 +127,12 @@ class LauncherPreferences(private val context: Context) {
         }
     }
 
+    suspend fun setAutoStartHapp(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_AUTO_START_HAPP] = enabled
+        }
+    }
+
     suspend fun setCustomBackgroundPath(path: String?) {
         context.dataStore.edit { prefs ->
             if (path.isNullOrBlank()) {
@@ -155,6 +163,7 @@ class LauncherPreferences(private val context: Context) {
         val KEY_BG_MODE = stringPreferencesKey("background_mode")
         val KEY_CUSTOM_BG_PATH = stringPreferencesKey("custom_bg_path")
         val KEY_MEDIA_SCREEN_ENABLED = booleanPreferencesKey("media_screen_enabled")
+        val KEY_AUTO_START_HAPP = booleanPreferencesKey("auto_start_happ")
 
         val DEFAULT_PIN_GROUPS = listOf(
             listOf(

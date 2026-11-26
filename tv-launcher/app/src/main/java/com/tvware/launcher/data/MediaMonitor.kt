@@ -312,15 +312,12 @@ class MediaMonitor(
             PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_FAST_FORWARD
             )) != 0L
 
-        val embeddedBitmap = meta?.firstValidBitmap(
-            MediaMetadata.METADATA_KEY_ALBUM_ART,
-            MediaMetadata.METADATA_KEY_ART,
-            MediaMetadata.METADATA_KEY_DISPLAY_ICON,
-        )
-        val artworkUri = meta?.firstNonBlankString(
-            MediaMetadata.METADATA_KEY_ALBUM_ART_URI,
-            MediaMetadata.METADATA_KEY_ART_URI,
-            MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI,
+        // DISPLAY_ICON может содержать логотип плеера, а не обложку.
+        val (embeddedBitmap, artworkUri) = selectMediaArtwork(
+            albumBitmap = meta?.firstValidBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART),
+            albumUri = meta?.firstNonBlankString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI),
+            trackBitmap = meta?.firstValidBitmap(MediaMetadata.METADATA_KEY_ART),
+            trackUri = meta?.firstNonBlankString(MediaMetadata.METADATA_KEY_ART_URI),
         )
 
         val trackKey = MediaTrackKey(

@@ -6,7 +6,7 @@ import re
 import shlex
 import tempfile
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
 
@@ -15,7 +15,9 @@ from .presets import (
     ANIMATION_KEYS,
     HAPP_PACKAGES,
     LAUNCHER_ACTIVITY,
+    LAUNCHER_DREAM_COMPONENT,
     LAUNCHER_PACKAGE,
+    SCREENSAVER_KEYS,
     STOCK_LAUNCHER_PACKAGES,
 )
 
@@ -23,6 +25,8 @@ _BOOT_ID = r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}"
 _PACKAGE = r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*"
 _COMPONENT = rf"{_PACKAGE}/\.?[A-Za-z_$][A-Za-z0-9_.$]*"
 _SCALE = r"(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?|null"
+_SCREENSAVER_BOOL = r"[01]|null"
+_SCREENSAVER_COMPONENTS = rf"null|{_COMPONENT}(?:,{_COMPONENT})*"
 _REJECTION = re.compile(
     r"^\s*(?:(?:java\.lang\.)?SecurityException\b|Failure\b|Unknown package:|DELETE_FAILED_|INSTALL_FAILED_)",
     re.IGNORECASE | re.MULTILINE,
@@ -52,6 +56,7 @@ class DeviceInspection:
     happ_whitelisted: bool
     installed_packages: set[str]
     disabled_packages: set[str]
+    screensaver_settings: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -61,6 +66,7 @@ class ApplyPlan:
     set_home_launcher: bool
     disable_stock_launcher: bool
     packages_to_disable: list[str]
+    set_idle_screensaver: bool = False
 
 
 @dataclass(frozen=True)
@@ -105,15 +111,23 @@ def inspect_device(adb: AdbClient, serial: str) -> DeviceInspection:
     component = next((line.strip() for line in reversed(home.splitlines())
                       if re.fullmatch(_COMPONENT, line.strip())), None)
     scales = {key: _read(adb, serial, f"settings get global {key}") or "null" for key in ANIMATION_KEYS}
+    screensaver = {key: _read(adb, serial, f"settings get secure {key}") or "null" for key in SCREENSAVER_KEYS}
     whitelist = re.split(r"[,\s]+", _read(adb, serial, _WHITELIST))
     disabled = _packages(_read(adb, serial, "pm list packages -d"))
     installed = _packages(_read(adb, serial, "pm list packages"))
     return DeviceInspection(device_id, model, version, int(sdk) if sdk.isascii() and sdk.isdecimal() else 0,
-                            component, scales, any(pkg in whitelist for pkg in HAPP_PACKAGES), installed, disabled)
+                            component, scales, any(pkg in whitelist for pkg in HAPP_PACKAGES), installed, disabled,
+                            screensaver)
 
 
 def _matches(pattern: str, value: object) -> bool:
     return isinstance(value, str) and re.fullmatch(pattern, value) is not None
+
+
+def _valid_screensaver_entry(key: str, value: object) -> bool:
+    if key == "screensaver_components":
+        return _matches(_SCREENSAVER_COMPONENTS, value)
+    return key in SCREENSAVER_KEYS and _matches(_SCREENSAVER_BOOL, value)
 
 
 def _validate_snapshot(snapshot: dict, device_id: str) -> dict:
@@ -141,6 +155,12 @@ def _validate_snapshot(snapshot: dict, device_id: str) -> dict:
     if not isinstance(packages, dict) or any(not _matches(_PACKAGE, pkg) or method not in ("disable", "uninstall")
                                             for pkg, method in packages.items()):
         raise ValueError("invalid snapshot package record")
+    screensaver = snapshot.get("screensaver_settings")
+    if "screensaver_settings" in snapshot and (
+        not isinstance(screensaver, dict) or any(not _valid_screensaver_entry(key, value)
+                                                 for key, value in screensaver.items())
+    ):
+        raise ValueError("invalid snapshot screensaver settings")
     return snapshot
 
 
@@ -200,10 +220,19 @@ def apply_optimizations(
     try:
         try:
             snapshot = _load_snapshot(path, device_id)
+            if plan.set_idle_screensaver and "screensaver_settings" not in snapshot and inspection.screensaver_settings:
+                snapshot = _validate_snapshot({**snapshot, "screensaver_settings": inspection.screensaver_settings}, device_id)
+                _save_snapshot(path, snapshot)
         except FileNotFoundError:
-            snapshot = _validate_snapshot(dict(device_id=device_id, home_component=inspection.home_component,
-                                               animation_scales=inspection.animation_scales, disabled_packages={}),
-                                          device_id)
+            raw_snapshot = dict(
+                device_id=device_id,
+                home_component=inspection.home_component,
+                animation_scales=inspection.animation_scales,
+                disabled_packages={},
+            )
+            if inspection.screensaver_settings:
+                raw_snapshot["screensaver_settings"] = inspection.screensaver_settings
+            snapshot = _validate_snapshot(raw_snapshot, device_id)
             _save_snapshot(path, snapshot)
         if "pending_package" in snapshot:
             raise ValueError("Pending package mutation; run rollback before applying changes")
@@ -233,6 +262,14 @@ def apply_optimizations(
     previous_home = _home_package(inspection.home_component)
     if plan.set_home_launcher or plan.disable_stock_launcher:
         _apply_launcher(snapshot, inspection, plan, run, disable, report, log_cb)
+    if plan.set_idle_screensaver:
+        if LAUNCHER_PACKAGE not in inspection.installed_packages:
+            _record(report.errors, f"Cannot set idle screensaver: {LAUNCHER_PACKAGE} is not installed", log_cb)
+        else:
+            run("settings put secure screensaver_enabled 1")
+            run(f"settings put secure screensaver_components {LAUNCHER_DREAM_COMPONENT}")
+            run("settings put secure screensaver_activate_on_sleep 1")
+            run("settings put secure screensaver_activate_on_dock 1")
     for pkg in plan.packages_to_disable:
         if not _matches(_PACKAGE, pkg):
             _record(report.errors, f"Invalid package name: {pkg!r}", log_cb)
@@ -408,5 +445,8 @@ def rollback_device(
         _record(report.errors, "Cannot roll back launcher: original HOME is unrestorable", log_cb)
     for key, value in snapshot["animation_scales"].items():
         command = f"settings delete global {key}" if value == "null" else f"settings put global {key} {value}"
+        _run(adb, serial, command, report, log_cb)
+    for key, value in snapshot.get("screensaver_settings", {}).items():
+        command = f"settings delete secure {key}" if value == "null" else f"settings put secure {key} {shlex.quote(value)}"
         _run(adb, serial, command, report, log_cb)
     return report

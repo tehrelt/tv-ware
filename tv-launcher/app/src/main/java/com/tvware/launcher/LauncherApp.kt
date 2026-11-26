@@ -20,6 +20,9 @@ class LauncherApp : Application() {
     val networkMonitor: NetworkMonitor by lazy { NetworkMonitor(this) }
     val mediaMonitor: MediaMonitor by lazy { MediaMonitor(this, appScope) }
 
+    @Volatile
+    var happAutoStartAttempted: Boolean = false
+
     override fun onCreate() {
         super.onCreate()
         appRepository.start()

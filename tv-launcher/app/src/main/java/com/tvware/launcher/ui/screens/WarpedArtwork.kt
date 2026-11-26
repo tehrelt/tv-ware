@@ -1,5 +1,6 @@
 package com.tvware.launcher.ui.screens
 
+import android.graphics.Bitmap
 import android.graphics.Paint
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -20,6 +21,7 @@ import kotlin.math.sin
 
 private const val MeshSize = 12
 private const val WarpPeriodMs = 18_000
+private const val SoftWarpMaxPx = 96
 
 @Composable
 internal fun WarpedArtwork(artwork: ImageBitmap, animate: Boolean, modifier: Modifier = Modifier) {
@@ -33,7 +35,7 @@ internal fun WarpedArtwork(artwork: ImageBitmap, animate: Boolean, modifier: Mod
     } else {
         null
     }
-    val bitmap = remember(artwork) { artwork.asAndroidBitmap() }
+    val bitmap = remember(artwork) { prepareSoftWarpBitmap(artwork.asAndroidBitmap()) }
     val vertices = remember { FloatArray((MeshSize + 1) * (MeshSize + 1) * 2) }
     val paint = remember { Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG) }
     Canvas(modifier) {
@@ -71,4 +73,13 @@ internal fun warpArtworkMesh(vertices: FloatArray, divisions: Int, width: Float,
             vertices[index++] = height * (v + strength * sin(cycle + 5f * u + 1.6f))
         }
     }
+}
+
+private fun prepareSoftWarpBitmap(source: Bitmap): Bitmap {
+    val maxDim = maxOf(source.width, source.height)
+    if (maxDim <= SoftWarpMaxPx || source.width <= 0 || source.height <= 0) return source
+    val scale = SoftWarpMaxPx.toFloat() / maxDim
+    val w = (source.width * scale).toInt().coerceAtLeast(1)
+    val h = (source.height * scale).toInt().coerceAtLeast(1)
+    return runCatching { Bitmap.createScaledBitmap(source, w, h, true) }.getOrDefault(source)
 }

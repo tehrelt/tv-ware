@@ -47,7 +47,17 @@ jobs:
         run: ./gradlew --console=plain -PlauncherBuildNumber="$GITHUB_RUN_NUMBER" :app:checkReleaseAarMetadata :app:assembleRelease
       - name: Stage launcher APK
         run: cp tv-launcher/app/build/outputs/apk/release/app-release.apk tv-launcher.apk
-      - uses: softprops/action-gh-release@v3
+      - name: Publish versioned launcher release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: launcher-v1.0.${{ github.run_number }}
+          name: TV Launcher 1.0.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: false
+          fail_on_unmatched_files: true
+          files: tv-launcher.apk
+      - name: Update launcher download for existing installers
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: launcher-latest
           make_latest: false

@@ -17,7 +17,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.launch
 import com.tvware.launcher.data.AppInfo
 import com.tvware.launcher.data.MediaNotificationListenerService
 import com.tvware.launcher.ui.LauncherViewModel
@@ -36,6 +40,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                model.maybeAutoStartHapp()
+            }
+        }
         setContent {
             TvLauncherTheme {
                 val state by model.uiState.collectAsStateWithLifecycle()
@@ -67,6 +76,7 @@ class MainActivity : ComponentActivity() {
                         onSelectGridColumns = model::setGridColumns,
                         onSetMediaScreenEnabled = model::setMediaScreenEnabled,
                         onRequestMediaAccess = ::openMediaAccessSettings,
+                        onSetAutoStartHapp = model::setAutoStartHapp,
                         onUnhideApp = model::unhideApp,
                         onBack = { settings = false },
                     )

@@ -16,7 +16,7 @@
 
 [Спецификация tv-setup](docs/superpowers/specs/2026-11-25-tv-setup-design.md).
 
-CI публикует `tv-launcher.apk` в релизе `launcher-latest`. Для постоянной подписи задайте `KEYSTORE_BASE64` и `KEYSTORE_PROPERTIES` как Base64 содержимого `release.jks` и `keystore.properties` соответственно; в свойствах укажите `storeFile=release.jks`. Без обоих секретов используется отладочная подпись.
+CI публикует `tv-launcher.apk` в отдельном релизе `launcher-v1.0.N`, где `N` — номер запуска workflow. Тег `launcher-latest` обновляется для совместимости с существующими версиями `tv-setup`. Для постоянной подписи задайте `KEYSTORE_BASE64` и `KEYSTORE_PROPERTIES` как Base64 содержимого `release.jks` и `keystore.properties` соответственно; в свойствах укажите `storeFile=release.jks`. Без обоих секретов используется отладочная подпись.
 
 ## Бинарные зависимости
 

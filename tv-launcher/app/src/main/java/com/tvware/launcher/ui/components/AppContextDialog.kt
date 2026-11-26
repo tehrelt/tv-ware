@@ -1,5 +1,6 @@
 package com.tvware.launcher.ui.components
 
+import android.view.KeyEvent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -22,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,11 +52,25 @@ fun AppContextDialog(
 ) {
     Dialog(onDismissRequest = onDismiss) {
         val firstFocus = remember { FocusRequester() }
+        val confirmInput = remember { MenuConfirmInput() }
         LaunchedEffect(app.packageName) { firstFocus.requestFocus() }
         val panelShape = RoundedCornerShape(20.dp)
 
         Column(
             modifier = Modifier
+                .onPreviewKeyEvent { event ->
+                    val key = event.nativeKeyEvent
+                    when (key.keyCode) {
+                        KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
+                        KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_BUTTON_A -> confirmInput.consume(
+                            keyCode = key.keyCode,
+                            down = key.action == KeyEvent.ACTION_DOWN,
+                            repeatCount = key.repeatCount,
+                            canceled = key.isCanceled,
+                        )
+                        else -> false
+                    }
+                }
                 .width(384.dp)
                 .clip(panelShape)
                 .background(LauncherColors.SurfaceCard)

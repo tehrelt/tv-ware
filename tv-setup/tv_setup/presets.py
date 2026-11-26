@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 LAUNCHER_PACKAGE = "com.tvware.launcher"
 LAUNCHER_ACTIVITY = "com.tvware.launcher/.MainActivity"
+LAUNCHER_DREAM_COMPONENT = "com.tvware.launcher/.LauncherDreamService"
 HAPP_PACKAGES = ("su.happ.proxyutility", "com.happproxy")
 STOCK_LAUNCHER_PACKAGES = (
     "com.google.android.apps.tv.launcherx",
@@ -15,6 +16,12 @@ ANIMATION_KEYS = (
     "window_animation_scale",
     "transition_animation_scale",
     "animator_duration_scale",
+)
+SCREENSAVER_KEYS = (
+    "screensaver_enabled",
+    "screensaver_components",
+    "screensaver_activate_on_sleep",
+    "screensaver_activate_on_dock",
 )
 
 

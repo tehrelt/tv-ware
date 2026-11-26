@@ -243,11 +243,13 @@ fun MediaScreen(
                 .fillMaxSize()
                 .padding(horizontal = 48.dp, vertical = 32.dp),
         ) {
-            MediaTopBar(
-                appLabel = media.appLabel,
-                isPlaying = media.isPlaying,
-                networkStatus = networkStatus,
-            )
+            MediaChromeSlot(visible = controlsVisible, height = 44.dp) {
+                MediaTopBar(
+                    appLabel = media.appLabel,
+                    isPlaying = media.isPlaying,
+                    networkStatus = networkStatus,
+                )
+            }
 
             Row(
                 modifier = Modifier
@@ -315,7 +317,7 @@ fun MediaScreen(
 
                     Spacer(modifier = Modifier.height(28.dp))
 
-                    MediaControlsSlot(visible = controlsVisible) {
+                    MediaChromeSlot(visible = controlsVisible, height = 60.dp) {
                         MediaControlsRow(
                             media = media,
                             isVisible = isVisible && controlsVisible,
@@ -329,13 +331,15 @@ fun MediaScreen(
                 }
             }
 
-            MediaScrollCue(enabled = isVisible, onClick = onScrollToApps)
+            MediaChromeSlot(visible = controlsVisible, height = 28.dp) {
+                MediaScrollCue(enabled = isVisible && controlsVisible, onClick = onScrollToApps)
+            }
         }
     }
 }
 
 @Composable
-private fun MediaBackdrop(
+internal fun MediaBackdrop(
     artwork: ImageBitmap?,
     animate: Boolean,
     backgroundMode: BackgroundMode,
@@ -354,7 +358,7 @@ private fun MediaBackdrop(
             modifier = Modifier
                 .fillMaxSize()
                 .alpha(0.72f)
-                .blur(32.dp, edgeTreatment = BlurredEdgeTreatment.Rectangle),
+                .blur(72.dp, edgeTreatment = BlurredEdgeTreatment.Rectangle),
         )
     }
     val scrim = if (artwork != null) {
@@ -462,7 +466,7 @@ private fun MediaTopBar(
 }
 
 @Composable
-private fun MediaArtworkCard(artwork: ImageBitmap?, title: String) {
+internal fun MediaArtworkCard(artwork: ImageBitmap?, title: String) {
     val cardShape = RoundedCornerShape(20.dp)
     val cardModifier = if (artwork != null && artwork.width > artwork.height * 1.25f) {
         Modifier.width(360.dp).aspectRatio(16f / 9f)
@@ -490,7 +494,7 @@ private fun MediaArtworkCard(artwork: ImageBitmap?, title: String) {
 }
 
 @Composable
-private fun MediaProgressSection(
+internal fun MediaProgressSection(
     media: MediaSessionInfo,
     isVisible: Boolean,
 ) {
@@ -588,8 +592,8 @@ private fun MediaProgressSection(
 }
 
 @Composable
-private fun MediaControlsSlot(visible: Boolean, content: @Composable () -> Unit) {
-    Box(Modifier.height(60.dp)) {
+private fun MediaChromeSlot(visible: Boolean, height: Dp, content: @Composable () -> Unit) {
+    Box(Modifier.height(height)) {
         AnimatedVisibility(visible = visible, enter = fadeIn(tween(180)), exit = fadeOut(tween(240))) {
             content()
         }

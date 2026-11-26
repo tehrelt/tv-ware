@@ -404,6 +404,49 @@ class GuiSmokeTests(unittest.TestCase):
             self.assertIsNone(app.adb.adb_path)
             self.assertTrue(app._download_adb_btn.winfo_manager())
 
+    def test_update_launcher_downloads_installs_and_reopens_home(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        apks_dir = root / "apks"
+        apks_dir.mkdir()
+        launcher_apk = apks_dir / "tv-launcher.apk"
+        info = DeviceInspection(
+            "SER1", "MiTV", "14", 34, f"{LAUNCHER_PACKAGE}/.MainActivity",
+            {"window_animation_scale": "0.25"}, True, {LAUNCHER_PACKAGE}, set(),
+        )
+
+        with patch("tv_setup.gui.find_adb_executable", return_value=Path("adb.exe")):
+            app = TvSetupApp(
+                tools_dir=root / "tools",
+                apks_dir=apks_dir,
+                state_dir=root / "state",
+                auto_discover=False,
+            )
+            app.withdraw()
+            self.addCleanup(app.destroy)
+            app._connected_serial = "192.168.31.42:5555"
+            app._inspection = info
+
+            def fake_download(target_dir, progress_cb=None, log_cb=None):
+                launcher_apk.write_bytes(b"apk")
+                return launcher_apk
+
+            with (
+                patch.object(app.adb, "ensure_adb", return_value=Path("adb.exe")),
+                patch.object(app.adb, "shell") as shell_mock,
+                patch("tv_setup.gui.download_launcher_apk", side_effect=fake_download) as dl_mock,
+                patch("tv_setup.gui.install_apk") as install_mock,
+                patch("tv_setup.gui.inspect_device", return_value=info) as inspect_mock,
+                patch.object(app, "_ui_call", side_effect=lambda fn: fn()),
+            ):
+                app._run_update_launcher_worker("192.168.31.42:5555")
+
+            dl_mock.assert_called_once()
+            install_mock.assert_called_once_with(app.adb, "192.168.31.42:5555", launcher_apk)
+            inspect_mock.assert_called_once_with(app.adb, "192.168.31.42:5555")
+            shell_mock.assert_called_once_with("192.168.31.42:5555", "input keyevent KEYCODE_HOME")
+
 
 if __name__ == "__main__":
     unittest.main()

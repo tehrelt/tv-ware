@@ -25,6 +25,7 @@ from .discovery import DeviceStatus, DiscoveredDevice, browse_mdns, discover_dev
 from .installer import (
     LocalApk,
     SignatureConflictError,
+    download_launcher_apk,
     download_repo_apks,
     import_local_apk,
     install_apk,
@@ -32,7 +33,7 @@ from .installer import (
     scan_local_apks,
 )
 from .optimizer import ApplyPlan, DeviceInspection, apply_optimizations, inspect_device, rollback_device
-from .presets import BLOAT_CATALOG
+from .presets import BLOAT_CATALOG, LAUNCHER_PACKAGE
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_APKS_DIR = BASE_DIR / "apks"
@@ -385,11 +386,13 @@ class TvSetupApp(ctk.CTk):
         self._whitelist_happ_var = tk.BooleanVar(value=True)
         self._set_home_var = tk.BooleanVar(value=True)
         self._disable_stock_var = tk.BooleanVar(value=True)
+        self._set_dream_var = tk.BooleanVar(value=True)
         for text, var in (
             ("Анимации 0.25x", self._fast_anim_var),
             ("Happ без энергосбережения", self._whitelist_happ_var),
             ("Сделать tv-launcher домашним экраном", self._set_home_var),
             ("Отключить стоковый лаунчер", self._disable_stock_var),
+            ("Сделать tv-launcher заставкой (idle-экран)", self._set_dream_var),
         ):
             ctk.CTkCheckBox(toggles, text=text, variable=var, text_color=PALETTE["text"], **_CHECKBOX_STYLE).pack(anchor="w", pady=3)
 
@@ -406,17 +409,21 @@ class TvSetupApp(ctk.CTk):
 
         actions = ctk.CTkFrame(bottom, fg_color="transparent")
         actions.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 6))
-        actions.grid_columnconfigure(2, weight=1)
+        actions.grid_columnconfigure(3, weight=1)
         self._apply_btn = ctk.CTkButton(
             actions, text="Применить выбранное", width=180, font=ctk.CTkFont(size=13, weight="bold"),
             command=self.start_apply, **_BTN_ACCENT,
         )
         self._apply_btn.grid(row=0, column=0, padx=(0, 8))
+        self._update_launcher_btn = ctk.CTkButton(
+            actions, text="Обновить лаунчер", width=160, command=self.start_update_launcher, **_BTN_SURFACE,
+        )
+        self._update_launcher_btn.grid(row=0, column=1, padx=(0, 8))
         self._rollback_btn = ctk.CTkButton(actions, text="Откатить изменения", width=170, command=self.start_rollback, **_BTN_SURFACE)
-        self._rollback_btn.grid(row=0, column=1, padx=(0, 12))
+        self._rollback_btn.grid(row=0, column=2, padx=(0, 12))
         self._progress_bar = ctk.CTkProgressBar(actions, fg_color=PALETTE["surface"], progress_color=PALETTE["accent"], height=8)
         self._progress_bar.set(0)
-        self._progress_bar.grid(row=0, column=2, sticky="ew")
+        self._progress_bar.grid(row=0, column=3, sticky="ew")
 
         self._log_box = ctk.CTkTextbox(
             bottom, height=120, fg_color=PALETTE["bg"], text_color=PALETTE["text"],
@@ -505,7 +512,8 @@ class TvSetupApp(ctk.CTk):
         state = "disabled" if busy else "normal"
         for btn in (
             self._download_adb_btn, self._discover_btn, self._refresh_btn, self._connect_btn,
-            self._manual_ip_btn, self._download_apks_btn, self._add_apk_btn, self._apply_btn, self._rollback_btn,
+            self._manual_ip_btn, self._download_apks_btn, self._add_apk_btn,
+            self._apply_btn, self._update_launcher_btn, self._rollback_btn,
         ):
             btn.configure(state=state)
         if not busy:
@@ -836,33 +844,77 @@ class TvSetupApp(ctk.CTk):
             set_home_launcher=self._set_home_var.get(),
             disable_stock_launcher=self._disable_stock_var.get(),
             packages_to_disable=packages_to_disable,
+            set_idle_screensaver=self._set_dream_var.get(),
         )
         self._start_worker(lambda: self._run_apply_worker(serial, inspection, selected_apks, plan))
 
+    def _install_apk_with_prompt(self, serial: str, apk: LocalApk) -> bool:
+        self._log(f"Установка {apk.filename}...")
+        try:
+            install_apk(self.adb, serial, apk.path)
+            self._log(f"Установлен {apk.filename}")
+            return True
+        except SignatureConflictError:
+            if not apk.package_hint:
+                self._log(f"Ошибка установки {apk.filename}: конфликт подписи (имя пакета неизвестно, удалите старую версию на ТВ вручную)")
+                return False
+            confirmed = self._ask_yes_no_sync(
+                "Конфликт подписи",
+                f"Пакет {apk.package_hint} уже установлен с другой подписью.\nУдалить старую версию и установить {apk.filename}?",
+            )
+            if not confirmed:
+                self._log(f"Пропущена установка {apk.filename}: конфликт подписи")
+                return False
+            try:
+                reinstall_after_uninstall(self.adb, serial, apk.package_hint, apk.path)
+                self._log(f"Переустановлен {apk.filename}")
+                return True
+            except AdbError as exc:
+                self._log(f"Ошибка переустановки {apk.filename}: {exc}")
+                return False
+        except AdbError as exc:
+            self._log(f"Ошибка установки {apk.filename}: {exc}")
+            return False
+
     def _install_selected_apks(self, serial: str, selected_apks: list[LocalApk]) -> None:
         for apk in selected_apks:
-            self._log(f"Установка {apk.filename}...")
-            try:
-                install_apk(self.adb, serial, apk.path)
-                self._log(f"Установлен {apk.filename}")
-            except SignatureConflictError:
-                if not apk.package_hint:
-                    self._log(f"Ошибка установки {apk.filename}: конфликт подписи (имя пакета неизвестно, удалите старую версию на ТВ вручную)")
-                    continue
-                confirmed = self._ask_yes_no_sync(
-                    "Конфликт подписи",
-                    f"Пакет {apk.package_hint} уже установлен с другой подписью.\nУдалить старую версию и установить {apk.filename}?",
-                )
-                if not confirmed:
-                    self._log(f"Пропущена установка {apk.filename}: конфликт подписи")
-                    continue
-                try:
-                    reinstall_after_uninstall(self.adb, serial, apk.package_hint, apk.path)
-                    self._log(f"Переустановлен {apk.filename}")
-                except AdbError as exc:
-                    self._log(f"Ошибка переустановки {apk.filename}: {exc}")
-            except AdbError as exc:
-                self._log(f"Ошибка установки {apk.filename}: {exc}")
+            self._install_apk_with_prompt(serial, apk)
+
+    def start_update_launcher(self) -> None:
+        if self._connected_serial is None:
+            self._log("Сначала подключите устройство")
+            return
+        serial = self._connected_serial
+        self._start_worker(lambda: self._run_update_launcher_worker(serial))
+
+    def _run_update_launcher_worker(self, serial: str) -> None:
+        self.adb.ensure_adb()
+        self._ui_call(self._refresh_adb_status)
+        self._log("Проверка обновления tv-launcher...")
+        try:
+            apk_path = download_launcher_apk(
+                self.apks_dir,
+                progress_cb=lambda _key, done, total: self._update_progress(done, total),
+                log_cb=self._log,
+            )
+        finally:
+            self._ui_call(self._refresh_apk_list)
+
+        installed = self._install_apk_with_prompt(
+            serial,
+            LocalApk(apk_path.name, apk_path, LAUNCHER_PACKAGE, None, None),
+        )
+        if not installed:
+            return
+        try:
+            updated = inspect_device(self.adb, serial)
+        except AdbError as exc:
+            self._log(f"Лаунчер обновлён, но не удалось обновить состояние: {exc}")
+            return
+        self._ui_call(lambda info=updated: self._refresh_inspection_ui(info))
+        if (updated.home_component or "").startswith(f"{LAUNCHER_PACKAGE}/"):
+            self.adb.shell(serial, "input keyevent KEYCODE_HOME")
+        self._log("Лаунчер обновлён")
 
     def _run_apply_worker(self, serial: str, inspection: DeviceInspection, selected_apks: list[LocalApk], plan: ApplyPlan) -> None:
         self.adb.ensure_adb()

@@ -17,7 +17,9 @@ import com.tvware.launcher.data.MediaMonitorState
 import com.tvware.launcher.data.MediaScreenReducer
 import com.tvware.launcher.data.MediaScreenVisibilityState
 import com.tvware.launcher.data.NetworkStatus
+import com.tvware.launcher.data.shouldAutoStartHapp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -46,6 +48,7 @@ data class LauncherUiState(
     val customBackgroundBitmap: ImageBitmap? = null,
     val networkStatus: NetworkStatus = NetworkStatus(),
     val mediaScreenEnabled: Boolean = true,
+    val autoStartHapp: Boolean = true,
     val mediaState: MediaMonitorState = MediaMonitorState(),
     val showMediaScreen: Boolean = false,
     val initializedDefaults: Boolean = false,
@@ -178,6 +181,31 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun setMediaScreenEnabled(enabled: Boolean) {
         viewModelScope.launch { preferences.setMediaScreenEnabled(enabled) }
+    }
+
+    fun setAutoStartHapp(enabled: Boolean) {
+        viewModelScope.launch { preferences.setAutoStartHapp(enabled) }
+    }
+
+    suspend fun maybeAutoStartHapp() {
+        if (app.happAutoStartAttempted) return
+        delay(1_500L)
+        val enabled = preferences.settingsFlow.first().autoStartHapp
+        val isVpnActive = networkMonitor.status.value.isVpnActive
+        if (isVpnActive) {
+            app.happAutoStartAttempted = true
+            return
+        }
+        if (shouldAutoStartHapp(
+                enabled = enabled,
+                alreadyAttempted = app.happAutoStartAttempted,
+                isVpnActive = false,
+                isHappInstalled = repository.isHappInstalled(),
+            )
+        ) {
+            app.happAutoStartAttempted = true
+            repository.connectHapp()
+        }
     }
 
     fun onLauncherResumed(allowAutoShow: Boolean = true) {
@@ -331,6 +359,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             customBackgroundBitmap = bgBitmap,
             networkStatus = netStatus,
             mediaScreenEnabled = settings.mediaScreenEnabled,
+            autoStartHapp = settings.autoStartHapp,
             mediaState = mediaState,
             showMediaScreen = showMedia,
             initializedDefaults = settings.initializedDefaults,
