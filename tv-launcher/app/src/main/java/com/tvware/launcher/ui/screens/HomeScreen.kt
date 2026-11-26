@@ -90,7 +90,9 @@ fun HomeScreen(
     val firstTileFocus = remember { FocusRequester() }
     var initialFocusRequested by remember { mutableStateOf(false) }
     val gridState = rememberLazyGridState()
-    val dragThresholdPx = with(LocalDensity.current) { 48.dp.toPx() }
+    val density = LocalDensity.current
+    val dragThresholdPx = with(density) { 48.dp.toPx() }
+    val topFadePx = with(density) { 36.dp.toPx() }
 
     val mediaProgress by animateFloatAsState(
         targetValue = if (uiState.showMediaScreen) 1f else 0f,
@@ -329,16 +331,35 @@ fun HomeScreen(
                 onUpFromStatusBar = onOpenMediaScreen,
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
-
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val columns = uiState.gridColumns
                 val tileWidth = (maxWidth - 16.dp * (columns - 1)) / columns
+                val isGridScrolled = gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0
                 LazyVerticalGrid(
                     state = gridState,
                     columns = GridCells.Fixed(columns),
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 32.dp),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (isGridScrolled) {
+                                Modifier
+                                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                                    .drawWithContent {
+                                        drawContent()
+                                        val fadeFraction = (topFadePx / size.height).coerceIn(0f, 1f)
+                                        drawRect(
+                                            brush = Brush.verticalGradient(
+                                                0f to Color.Transparent,
+                                                fadeFraction to Color.White,
+                                            ),
+                                            blendMode = BlendMode.DstIn,
+                                        )
+                                    }
+                            } else {
+                                Modifier
+                            },
+                        ),
+                    contentPadding = PaddingValues(top = 24.dp, bottom = 32.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {

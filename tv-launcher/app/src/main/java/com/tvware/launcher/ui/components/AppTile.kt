@@ -1,6 +1,9 @@
 package com.tvware.launcher.ui.components
 
 import android.view.KeyEvent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
@@ -24,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -51,6 +55,11 @@ fun AppTile(
     modifier: Modifier = Modifier,
 ) {
     var isFocused by remember { mutableStateOf(false) }
+    val focusProgress by animateFloatAsState(
+        targetValue = if (isFocused) 1f else 0f,
+        animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing),
+        label = "tile_focus",
+    )
     val initialArtwork = remember(app.packageName, app.versionCode) { getCachedArtwork(app) }
     val artwork by produceState(initialValue = initialArtwork, app.packageName, app.versionCode) {
         if (value == null) {
@@ -61,18 +70,19 @@ fun AppTile(
     val outerShape = RoundedCornerShape(16.dp)
     val separatorShape = RoundedCornerShape(14.dp)
     val shape = RoundedCornerShape(12.dp)
-    val frameModifier = if (isFocused) {
-        Modifier
-            .fillMaxWidth()
-            .border(2.dp, LauncherColors.FocusRing, outerShape)
-            .padding(2.dp)
-            .border(2.dp, LauncherColors.BgBlack, separatorShape)
-            .padding(2.dp)
-    } else {
-        Modifier
-            .fillMaxWidth()
-            .padding(4.dp)
-    }
+    val frameModifier = Modifier
+        .fillMaxWidth()
+        .then(
+            if (focusProgress > 0f) {
+                Modifier
+                    .border(2.dp, LauncherColors.FocusRing.copy(alpha = focusProgress), outerShape)
+                    .padding(2.dp)
+                    .border(2.dp, LauncherColors.BgBlack.copy(alpha = focusProgress), separatorShape)
+                    .padding(2.dp)
+            } else {
+                Modifier.padding(4.dp)
+            },
+        )
 
     Column(
         modifier = modifier,
@@ -152,8 +162,8 @@ fun AppTile(
             overflow = TextOverflow.Ellipsis,
             style = TextStyle(
                 fontSize = 14.sp,
-                fontWeight = if (isFocused) FontWeight.Medium else FontWeight.Normal,
-                color = if (isFocused) LauncherColors.TextPrimary else LauncherColors.TextSecondary,
+                fontWeight = FontWeight.Normal,
+                color = lerp(LauncherColors.TextSecondary, LauncherColors.TextPrimary, focusProgress),
             ),
             modifier = Modifier.padding(horizontal = 4.dp),
         )
