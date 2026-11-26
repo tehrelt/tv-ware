@@ -29,7 +29,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -61,6 +60,7 @@ import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -69,6 +69,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
@@ -77,6 +78,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -89,11 +92,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -102,7 +108,6 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.tvware.launcher.data.BackgroundMode
-import com.tvware.launcher.data.LyricSyllable
 import com.tvware.launcher.data.LyricsData
 import com.tvware.launcher.data.LyricsState
 import com.tvware.launcher.data.LyricsSyncType
@@ -820,7 +825,7 @@ private fun MediaLyricsPanel(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 14.dp),
+                            .padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
                         horizontalArrangement = if (line.isOppositeAligned) {
                             Arrangement.spacedBy(10.dp, Alignment.End)
                         } else {
@@ -848,121 +853,154 @@ private fun MediaLyricsPanel(
                 }
 
                 if (isActive && lyrics.syncType == LyricsSyncType.SYLLABLE && line.syllables.isNotEmpty()) {
-                    val sungColor = LauncherColors.TextPrimary
-                    val unsungColor = LauncherColors.TextPrimary.copy(alpha = 0.26f)
-                    val words = remember(line.syllables) {
-                        buildList<List<LyricSyllable>> {
-                            var current = mutableListOf<LyricSyllable>()
-                            for (syl in line.syllables) {
-                                current.add(syl)
-                                if (!syl.isPartOfWord) {
-                                    add(current.toList())
-                                    current = mutableListOf()
-                                }
-                            }
-                            if (current.isNotEmpty()) add(current.toList())
-                        }
+                    var textLayout by remember(lyrics.trackId, index) {
+                        mutableStateOf<TextLayoutResult?>(null)
                     }
-                    FlowRow(
-                        modifier = lineModifier,
-                        horizontalArrangement = Arrangement.spacedBy(
-                            8.dp,
-                            if (line.isOppositeAligned) Alignment.End else Alignment.Start,
-                        ),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        words.forEach { word ->
-                            Row {
-                                word.forEach { syl ->
-                                    var sylWidthPx by remember(syl) { mutableStateOf(0f) }
-                                    val rawProgress = if (syl.endMs > syl.startMs) {
-                                        ((currentPosMs - syl.startMs).toFloat() / (syl.endMs - syl.startMs).toFloat())
-                                            .coerceIn(0f, 1f)
-                                    } else {
-                                        if (currentPosMs >= syl.startMs) 1f else 0f
-                                    }
-                                    val progress = rawProgress * rawProgress * (3f - 2f * rawProgress)
-                                    val activeGlow = if (rawProgress > 0f && rawProgress < 1f) {
-                                        sin(rawProgress * PI).toFloat()
-                                    } else {
-                                        0f
-                                    }
-                                    val afterGlow = if (rawProgress >= 1f && syl.endMs > 0L) {
-                                        (1f - (currentPosMs - syl.endMs).toFloat() / 260f).coerceIn(0f, 1f)
-                                    } else {
-                                        0f
-                                    }
-                                    val effect = maxOf(activeGlow * progress, afterGlow)
-                                    val shadow = if (effect > 0.01f) {
-                                        Shadow(
-                                            color = Color.White.copy(alpha = 0.45f * effect),
-                                            offset = Offset.Zero,
-                                            blurRadius = 8f * effect,
-                                        )
-                                    } else {
-                                        null
-                                    }
+                    val sungColor = LauncherColors.TextPrimary
+                    val unsungColor = LauncherColors.TextPrimary.copy(alpha = 0.35f)
+                    val wavingChars = mutableListOf<Pair<Int, Float>>()
+                    val annotated = buildAnnotatedString {
+                        line.syllables.forEachIndexed { sylIdx, syl ->
+                            val startChar = length
+                            val rawProgress = if (syl.endMs > syl.startMs) {
+                                ((currentPosMs - syl.startMs).toFloat() / (syl.endMs - syl.startMs).toFloat())
+                                    .coerceIn(0f, 1f)
+                            } else {
+                                if (currentPosMs >= syl.startMs) 1f else 0f
+                            }
+                            val progress = rawProgress * rawProgress * (3f - 2f * rawProgress)
+                            val endChar = startChar + syl.text.length
+                            val layout = textLayout
+                            val wipeBrush = if (
+                                rawProgress > 0f &&
+                                rawProgress < 1f &&
+                                layout != null &&
+                                endChar <= layout.layoutInput.text.length
+                            ) {
+                                val startX = layout.getHorizontalPosition(startChar, usePrimaryDirection = true)
+                                val endX = layout.getHorizontalPosition(endChar, usePrimaryDirection = true)
+                                if (endX > startX + 1f) {
+                                    val wipeX = startX + (endX - startX) * progress
+                                    val feather = ((endX - startX) * 0.18f).coerceAtLeast(6f)
+                                    Brush.horizontalGradient(
+                                        colors = listOf(sungColor, unsungColor),
+                                        startX = wipeX - feather,
+                                        endX = wipeX + feather,
+                                    )
+                                } else {
+                                    null
+                                }
+                            } else {
+                                null
+                            }
 
-                                    val sylDurationMs = (syl.endMs - syl.startMs).coerceAtLeast(120L).toFloat()
-                                    val riseMs = (sylDurationMs * 0.45f).coerceIn(90f, 180f)
-                                    val fallMs = 240f
-                                    val elapsed = (currentPosMs - syl.startMs).toFloat()
+                            val fallMs = 220f
+                            val hasWaveTail = rawProgress > 0f &&
+                                (rawProgress < 1f || (syl.endMs > 0L && currentPosMs < syl.endMs + fallMs.toLong()))
+
+                            if (hasWaveTail && layout != null && endChar <= layout.layoutInput.text.length) {
+                                val effectiveProgress = if (rawProgress < 1f) {
+                                    progress
+                                } else {
+                                    1f + ((currentPosMs - syl.endMs).toFloat() / fallMs).coerceAtLeast(0f)
+                                }
+                                val riseSpan = 0.18f
+                                val fallSpan = 0.55f
+                                val sylStartX = layout.getHorizontalPosition(startChar, usePrimaryDirection = true)
+                                val sylEndX = layout.getHorizontalPosition(endChar, usePrimaryDirection = true)
+                                val sylSpanX = (sylEndX - sylStartX).coerceAtLeast(1f)
+                                syl.text.forEachIndexed { charIdx, _ ->
+                                    val absIdx = startChar + charIdx
+                                    val box = layout.getBoundingBox(absIdx)
+                                    val charCenterX = (box.left + box.right) * 0.5f
+                                    val charNormX = ((charCenterX - sylStartX) / sylSpanX).coerceIn(0f, 1f)
+                                    val delta = effectiveProgress - charNormX
                                     val wave = when {
-                                        elapsed <= 0f -> 0f
-                                        elapsed < riseMs -> {
-                                            val t = (elapsed / riseMs).coerceIn(0f, 1f)
+                                        delta <= 0f -> 0f
+                                        delta < riseSpan -> {
+                                            val t = (delta / riseSpan).coerceIn(0f, 1f)
                                             t * t * (3f - 2f * t)
                                         }
-                                        elapsed < riseMs + fallMs -> {
-                                            val t = (1f - (elapsed - riseMs) / fallMs).coerceIn(0f, 1f)
+                                        delta < riseSpan + fallSpan -> {
+                                            val t = (1f - (delta - riseSpan) / fallSpan).coerceIn(0f, 1f)
                                             t * t * (3f - 2f * t)
                                         }
                                         else -> 0f
                                     }
-
-                                    val wipeBrush = if (rawProgress > 0f && rawProgress < 1f && sylWidthPx > 1f) {
-                                        val wipeX = sylWidthPx * progress
-                                        val feather = (sylWidthPx * 0.18f).coerceAtLeast(6f)
-                                        Brush.horizontalGradient(
-                                            colors = listOf(sungColor, unsungColor),
-                                            startX = wipeX - feather,
-                                            endX = wipeX + feather,
-                                        )
-                                    } else {
-                                        null
+                                    if (wave > 0.01f) {
+                                        wavingChars.add(absIdx to wave)
                                     }
-
-                                    val textStyle = if (wipeBrush != null) {
-                                        TextStyle(
-                                            fontSize = 30.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            lineHeight = 38.sp,
-                                            brush = wipeBrush,
-                                            shadow = shadow,
-                                        )
-                                    } else {
-                                        TextStyle(
-                                            fontSize = 30.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            lineHeight = 38.sp,
-                                            color = if (rawProgress >= 1f) sungColor else unsungColor,
-                                            shadow = shadow,
-                                        )
-                                    }
-
-                                    Text(
-                                        text = syl.text,
-                                        onTextLayout = { sylWidthPx = it.size.width.toFloat() },
-                                        style = textStyle,
-                                        modifier = Modifier.graphicsLayer {
-                                            scaleY = 1f + 0.06f * wave
-                                            transformOrigin = TransformOrigin(0.5f, 0.85f)
-                                        },
-                                    )
                                 }
+                            }
+
+                            if (wipeBrush != null) {
+                                withStyle(SpanStyle(brush = wipeBrush)) {
+                                    append(syl.text)
+                                }
+                            } else {
+                                val color = if (rawProgress >= 1f) sungColor else unsungColor
+                                withStyle(SpanStyle(color = color)) {
+                                    append(syl.text)
+                                }
+                            }
+                            if (!syl.isPartOfWord && sylIdx < line.syllables.lastIndex) {
+                                append(' ')
                             }
                         }
                     }
+                    Text(
+                        text = annotated,
+                        textAlign = align,
+                        onTextLayout = { textLayout = it },
+                        style = TextStyle(
+                            fontSize = 30.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            lineHeight = 38.sp,
+                        ),
+                        modifier = lineModifier.drawWithContent {
+                            val layout = textLayout
+                            if (layout == null || wavingChars.isEmpty()) {
+                                drawContent()
+                                return@drawWithContent
+                            }
+                            drawContext.canvas.save()
+                            wavingChars.forEach { (charIdx, _) ->
+                                if (charIdx < layout.layoutInput.text.length) {
+                                    val lineIdx = layout.getLineForOffset(charIdx)
+                                    val box = layout.getBoundingBox(charIdx)
+                                    drawContext.canvas.clipRect(
+                                        box.left,
+                                        layout.getLineTop(lineIdx),
+                                        box.right,
+                                        layout.getLineBottom(lineIdx),
+                                        ClipOp.Difference,
+                                    )
+                                }
+                            }
+                            drawContent()
+                            drawContext.canvas.restore()
+
+                            wavingChars.forEach { (charIdx, wave) ->
+                                if (charIdx < layout.layoutInput.text.length) {
+                                    val lineIdx = layout.getLineForOffset(charIdx)
+                                    val box = layout.getBoundingBox(charIdx)
+                                    val top = layout.getLineTop(lineIdx)
+                                    val bottom = layout.getLineBottom(lineIdx)
+                                    val baselineY = layout.getLineBaseline(lineIdx)
+                                    val pivotX = (box.left + box.right) * 0.5f
+                                    scale(
+                                        scaleX = 1f,
+                                        scaleY = 1f + 0.10f * wave,
+                                        pivot = Offset(pivotX, baselineY),
+                                    ) {
+                                        clipRect(box.left, top, box.right, bottom) {
+                                            this@drawWithContent.drawContent()
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                    )
                 } else {
                     Text(
                         text = line.text,
