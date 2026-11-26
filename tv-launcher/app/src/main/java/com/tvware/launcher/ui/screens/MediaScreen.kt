@@ -68,9 +68,11 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shadow
@@ -752,7 +754,27 @@ private fun MediaLyricsPanel(
             userScrollEnabled = false,
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f),
+                .weight(1f)
+                .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                .drawWithContent {
+                    drawContent()
+                    val fadeFraction = if (size.height > 0f) {
+                        (72.dp.toPx() / size.height).coerceIn(0f, 0.25f)
+                    } else {
+                        0f
+                    }
+                    if (fadeFraction > 0f) {
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                0f to Color.Transparent,
+                                fadeFraction to Color.Black,
+                                (1f - fadeFraction) to Color.Black,
+                                1f to Color.Transparent,
+                            ),
+                            blendMode = BlendMode.DstIn,
+                        )
+                    }
+                },
             contentPadding = PaddingValues(vertical = 160.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
