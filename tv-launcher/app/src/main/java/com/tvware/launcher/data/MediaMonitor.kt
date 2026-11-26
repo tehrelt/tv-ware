@@ -55,6 +55,7 @@ class MediaMonitor(
     private val controllerCallbacks = LinkedHashMap<MediaSession.Token, Pair<MediaController, MediaController.Callback>>()
     private var currentControllers: List<MediaController> = emptyList()
     private var activeToken: MediaSession.Token? = null
+    private val metadataSnapshots = mutableMapOf<MediaSession.Token, MediaMetadata?>()
     private var artworkJob: Job? = null
     private var loadingArtworkKey: String? = null
 
@@ -209,6 +210,7 @@ class MediaMonitor(
             val (token, pair) = iterator.next()
             if (token !in activeTokens) {
                 runCatching { pair.first.unregisterCallback(pair.second) }
+                metadataSnapshots.remove(token)
                 iterator.remove()
             }
         }
@@ -221,6 +223,7 @@ class MediaMonitor(
                     }
 
                     override fun onMetadataChanged(metadata: MediaMetadata?) {
+                        metadataSnapshots[controller.sessionToken] = metadata
                         publishActiveSession()
                     }
 
@@ -244,6 +247,7 @@ class MediaMonitor(
             runCatching { controller.unregisterCallback(callback) }
         }
         controllerCallbacks.clear()
+        metadataSnapshots.clear()
     }
 
     private fun publishActiveSession() {
@@ -266,7 +270,11 @@ class MediaMonitor(
     }
 
     private fun buildSessionInfo(controller: MediaController): MediaSessionInfo {
-        val meta = controller.metadata
+        val meta = if (metadataSnapshots.containsKey(controller.sessionToken)) {
+            metadataSnapshots[controller.sessionToken]
+        } else {
+            controller.metadata.also { metadataSnapshots[controller.sessionToken] = it }
+        }
         val pb = controller.playbackState
         val pbState = pb?.state ?: PlaybackState.STATE_NONE
         val playing = isPlaybackActiveState(pbState)
@@ -315,12 +323,14 @@ class MediaMonitor(
             MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI,
         )
 
-        val artworkKey = when {
-            artworkUri != null -> "uri:$artworkUri"
-            embeddedBitmap != null ->
-                "bmp:$pkg:$title:$artist:$album:${embeddedBitmap.width}x${embeddedBitmap.height}"
-            else -> null
-        }
+        val trackKey = MediaTrackKey(
+            sessionKey = controller.sessionToken.toString(),
+            mediaId = meta?.firstNonBlankString(MediaMetadata.METADATA_KEY_MEDIA_ID),
+            title = title,
+            artist = artist,
+            album = album,
+        )
+        val artworkKey = trackKey.artworkKey(artworkUri, embeddedBitmap?.generationId)
 
         val currentMedia = _state.value.activeMedia
         val cachedArtwork = when {
@@ -450,6 +460,7 @@ class MediaMonitor(
             connectTimeout = HTTP_TIMEOUT_MS
             readTimeout = HTTP_TIMEOUT_MS
             instanceFollowRedirects = true
+            useCaches = false
         }
         try {
             if (conn.responseCode !in 200..299) return@runCatching null

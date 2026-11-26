@@ -44,7 +44,7 @@ jobs:
           fi
       - name: Build launcher APK
         working-directory: tv-launcher
-        run: ./gradlew --console=plain :app:checkReleaseAarMetadata :app:assembleRelease
+        run: ./gradlew --console=plain -PlauncherBuildNumber="$GITHUB_RUN_NUMBER" :app:checkReleaseAarMetadata :app:assembleRelease
       - name: Stage launcher APK
         run: cp tv-launcher/app/build/outputs/apk/release/app-release.apk tv-launcher.apk
       - uses: softprops/action-gh-release@v3

@@ -159,7 +159,6 @@ fun HomeScreen(
                             }
                             true
                         }
-                        KeyEvent.KEYCODE_DPAD_UP -> true
                         KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
                         KeyEvent.KEYCODE_MEDIA_PLAY,
                         KeyEvent.KEYCODE_MEDIA_PAUSE,

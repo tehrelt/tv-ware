@@ -5,8 +5,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.SystemClock
+import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -14,6 +17,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -59,6 +63,9 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -89,6 +96,18 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+private val MediaControlsWakeKeys = setOf(
+    KeyEvent.KEYCODE_DPAD_UP,
+    KeyEvent.KEYCODE_DPAD_LEFT,
+    KeyEvent.KEYCODE_DPAD_RIGHT,
+    KeyEvent.KEYCODE_DPAD_CENTER,
+    KeyEvent.KEYCODE_ENTER,
+    KeyEvent.KEYCODE_NUMPAD_ENTER,
+)
+
+internal fun mediaControlsHideAfterMs(isVisible: Boolean, isPlaying: Boolean): Long? =
+    if (isVisible && isPlaying) 5_000L else null
+
 @Composable
 fun MediaScreen(
     media: MediaSessionInfo,
@@ -104,14 +123,26 @@ fun MediaScreen(
     modifier: Modifier = Modifier,
 ) {
     val playPauseFocus = remember { FocusRequester() }
+    val idleFocus = remember { FocusRequester() }
+    var controlsVisible by remember(isVisible) { mutableStateOf(true) }
+    var lastInteraction by remember(isVisible) { mutableLongStateOf(0L) }
+    var wakeKey by remember(isVisible) { mutableStateOf<Int?>(null) }
     val dragThresholdPx = with(LocalDensity.current) { 48.dp.toPx() }
 
     BackHandler(enabled = isVisible) {
         onScrollToApps()
     }
 
-    LaunchedEffect(isVisible) {
-        if (isVisible) {
+    LaunchedEffect(isVisible, media.isPlaying, lastInteraction) {
+        if (!isVisible) return@LaunchedEffect
+        controlsVisible = true
+        val timeout = mediaControlsHideAfterMs(isVisible, media.isPlaying) ?: return@LaunchedEffect
+        delay(timeout)
+        if (idleFocus.requestFocus()) controlsVisible = false
+    }
+
+    LaunchedEffect(isVisible, controlsVisible, media.canPlayPause) {
+        if (isVisible && controlsVisible) {
             val focused = runCatching { playPauseFocus.requestFocus() }.getOrDefault(false)
             if (!focused) {
                 withFrameNanos { }
@@ -126,6 +157,22 @@ fun MediaScreen(
             .focusProperties {
                 onEnter = {
                     if (!isVisible) cancelFocusChange()
+                }
+            }
+            .onPreviewKeyEvent { event ->
+                val code = event.nativeKeyEvent.keyCode
+                if (event.type == KeyEventType.KeyUp && wakeKey == code) {
+                    wakeKey = null
+                    true
+                } else if (isVisible && event.type == KeyEventType.KeyDown &&
+                    code in MediaControlsWakeKeys
+                ) {
+                    val consume = !controlsVisible || wakeKey == code
+                    if (consume) wakeKey = code
+                    lastInteraction++
+                    consume || code == KeyEvent.KEYCODE_DPAD_UP
+                } else {
+                    false
                 }
             }
             .pointerInput(isVisible, dragThresholdPx) {
@@ -145,6 +192,7 @@ fun MediaScreen(
                                 }
                             }
                             PointerEventType.Press -> {
+                                lastInteraction++
                                 val first = event.changes.firstOrNull()
                                 if (first != null) {
                                     tracking = true
@@ -181,8 +229,11 @@ fun MediaScreen(
                 }
             },
     ) {
+        Spacer(Modifier.size(1.dp).focusRequester(idleFocus).focusable(enabled = isVisible))
+
         MediaBackdrop(
             artwork = media.artwork,
+            animate = isVisible,
             backgroundMode = backgroundMode,
             customBackgroundBitmap = customBackgroundBitmap,
         )
@@ -264,15 +315,17 @@ fun MediaScreen(
 
                     Spacer(modifier = Modifier.height(28.dp))
 
-                    MediaControlsRow(
-                        media = media,
-                        isVisible = isVisible,
-                        playPauseFocus = playPauseFocus,
-                        onTogglePlayPause = onTogglePlayPause,
-                        onSkipPrevious = onSkipPrevious,
-                        onSkipNext = onSkipNext,
-                        onOpenApp = onOpenApp,
-                    )
+                    MediaControlsSlot(visible = controlsVisible) {
+                        MediaControlsRow(
+                            media = media,
+                            isVisible = isVisible && controlsVisible,
+                            playPauseFocus = playPauseFocus,
+                            onTogglePlayPause = onTogglePlayPause,
+                            onSkipPrevious = onSkipPrevious,
+                            onSkipNext = onSkipNext,
+                            onOpenApp = onOpenApp,
+                        )
+                    }
                 }
             }
 
@@ -284,6 +337,7 @@ fun MediaScreen(
 @Composable
 private fun MediaBackdrop(
     artwork: ImageBitmap?,
+    animate: Boolean,
     backgroundMode: BackgroundMode,
     customBackgroundBitmap: ImageBitmap?,
 ) {
@@ -293,51 +347,28 @@ private fun MediaBackdrop(
         scrimAlpha = 0.72f,
     )
 
-    Crossfade(
-        targetState = artwork,
-        animationSpec = tween(durationMillis = 450),
-        label = "media_backdrop",
-    ) { art ->
-        if (art != null) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                Image(
-                    bitmap = art,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .blur(28.dp, edgeTreatment = BlurredEdgeTreatment.Rectangle)
-                        .alpha(0.48f),
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    LauncherColors.BgBlack.copy(alpha = 0.48f),
-                                    LauncherColors.BgBlack.copy(alpha = 0.72f),
-                                    LauncherColors.BgBlack.copy(alpha = 0.92f),
-                                ),
-                            ),
-                        ),
-                )
-            }
-        } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(
-                                LauncherColors.Accent.copy(alpha = 0.14f),
-                                Color.Transparent,
-                            ),
-                        ),
-                    ),
-            )
-        }
+    if (artwork != null) {
+        WarpedArtwork(
+            artwork = artwork,
+            animate = animate,
+            modifier = Modifier
+                .fillMaxSize()
+                .alpha(0.72f)
+                .blur(32.dp, edgeTreatment = BlurredEdgeTreatment.Rectangle),
+        )
     }
+    val scrim = if (artwork != null) {
+        Brush.verticalGradient(
+            colors = listOf(
+                LauncherColors.BgBlack.copy(alpha = 0.35f),
+                LauncherColors.BgBlack.copy(alpha = 0.57f),
+                LauncherColors.BgBlack.copy(alpha = 0.85f),
+            ),
+        )
+    } else {
+        Brush.radialGradient(listOf(LauncherColors.Accent.copy(alpha = 0.14f), Color.Transparent))
+    }
+    Box(Modifier.fillMaxSize().background(scrim))
 }
 
 @Composable
@@ -431,20 +462,13 @@ private fun MediaTopBar(
 }
 
 @Composable
-private fun MediaArtworkCard(
-    artwork: ImageBitmap?,
-    title: String,
-) {
-    val isWide = artwork != null && artwork.width > artwork.height * 1.25f
+private fun MediaArtworkCard(artwork: ImageBitmap?, title: String) {
     val cardShape = RoundedCornerShape(20.dp)
-    val cardModifier = if (isWide) {
-        Modifier
-            .width(360.dp)
-            .aspectRatio(16f / 9f)
+    val cardModifier = if (artwork != null && artwork.width > artwork.height * 1.25f) {
+        Modifier.width(360.dp).aspectRatio(16f / 9f)
     } else {
         Modifier.size(264.dp)
     }
-
     Box(
         modifier = cardModifier
             .clip(cardShape)
@@ -452,38 +476,15 @@ private fun MediaArtworkCard(
             .border(1.dp, LauncherColors.BorderSubtle, cardShape),
         contentAlignment = Alignment.Center,
     ) {
-        Crossfade(
-            targetState = artwork,
-            animationSpec = tween(durationMillis = 350),
-            label = "media_artwork",
-        ) { art ->
-            if (art != null) {
-                Image(
-                    bitmap = art,
-                    contentDescription = title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(
-                                    LauncherColors.SurfaceElevated,
-                                    LauncherColors.SurfaceCard,
-                                ),
-                            ),
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    MusicNoteIcon(
-                        tint = LauncherColors.TextMuted,
-                        modifier = Modifier.size(64.dp),
-                    )
-                }
-            }
+        if (artwork != null) {
+            Image(
+                bitmap = artwork,
+                contentDescription = title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            MusicNoteIcon(tint = LauncherColors.TextMuted, modifier = Modifier.size(64.dp))
         }
     }
 }
@@ -582,6 +583,15 @@ private fun MediaProgressSection(
                     fontFeatureSettings = "tnum",
                 ),
             )
+        }
+    }
+}
+
+@Composable
+private fun MediaControlsSlot(visible: Boolean, content: @Composable () -> Unit) {
+    Box(Modifier.height(60.dp)) {
+        AnimatedVisibility(visible = visible, enter = fadeIn(tween(180)), exit = fadeOut(tween(240))) {
+            content()
         }
     }
 }

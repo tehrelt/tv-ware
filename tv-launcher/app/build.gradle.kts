@@ -13,6 +13,12 @@ val keystoreProps = Properties().apply {
     }
 }
 
+val releaseBuildNumber = providers.gradleProperty("launcherBuildNumber").orNull?.let { value ->
+    requireNotNull(value.toIntOrNull()?.takeIf { it in 1 until 2_100_000_000 }) {
+        "launcherBuildNumber must be a positive Android build number"
+    }
+}
+
 android {
     namespace = "com.tvware.launcher"
     compileSdk = 35
@@ -21,8 +27,8 @@ android {
         applicationId = "com.tvware.launcher"
         minSdk = 31
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = (releaseBuildNumber ?: 0) + 1
+        versionName = "1.0.${releaseBuildNumber ?: 0}"
     }
 
     signingConfigs {
