@@ -259,6 +259,10 @@ def _download_file(
             os.fsync(output.fileno())
         if downloaded == 0:
             raise ValueError(f"Downloaded empty APK for {target_path.name}")
+        if total > 0 and downloaded < total:
+            raise ValueError(
+                f"Incomplete download for {target_path.name}: got {downloaded} of {total} bytes"
+            )
         part_path.replace(target_path)
     finally:
         part_path.unlink(missing_ok=True)

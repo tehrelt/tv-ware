@@ -320,6 +320,46 @@ class InstallerTests(unittest.TestCase):
         self.assertFalse((self.apks_dir / "tv-launcher.apk").exists())
         self.assertFalse(list(self.apks_dir.glob("*.part")))
 
+    def test_download_repo_apks_rejects_truncated_download_and_preserves_state(self):
+        self.apks_dir.mkdir()
+        existing = self.apks_dir / "tv-launcher.apk"
+        existing.write_bytes(b"OLD_APK")
+        old_meta = {
+            "tv-launcher": {
+                "tag_name": "launcher-latest",
+                "asset_id": 900,
+                "updated_at": "2026-11-25T10:00:00Z",
+            }
+        }
+        (self.apks_dir / ".versions.json").write_text(json.dumps(old_meta), encoding="utf-8")
+
+        launcher_release = {
+            "tag_name": "launcher-latest",
+            "assets": [{
+                "id": 901,
+                "name": "tv-launcher.apk",
+                "updated_at": "2026-11-26T10:00:00Z",
+                "browser_download_url": "https://github.com/tehrelt/tv-ware/releases/download/launcher-latest/tv-launcher.apk",
+            }],
+        }
+        truncated = _bytes_response(b"partial")
+        truncated.headers = {"Content-Length": "100"}
+
+        def fake_urlopen(req, timeout=None):
+            if req.full_url == REPO_SOURCES[0].release_url:
+                return _json_response(launcher_release, req.full_url)
+            if req.full_url == launcher_release["assets"][0]["browser_download_url"]:
+                return truncated
+            raise AssertionError(f"Unexpected URL: {req.full_url}")
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with self.assertRaisesRegex(ValueError, "Incomplete download"):
+                download_repo_apks(self.apks_dir)
+
+        self.assertEqual(existing.read_bytes(), b"OLD_APK")
+        self.assertEqual(json.loads((self.apks_dir / ".versions.json").read_text(encoding="utf-8")), old_meta)
+        self.assertFalse(list(self.apks_dir.glob("*.part")))
+
     def test_import_local_apk_validates_and_copies_atomically(self):
         src = self.root / "SmartTube.apk"
         src.write_bytes(b"SMARTTUBE_BYTES")
