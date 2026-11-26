@@ -1,16 +1,14 @@
 # tv-ware
 
-Прошивка LineageOS 24.0, кастомный лаунчер и утилита настройки для Xiaomi TV Box S 2nd Gen (`jaws`) и других устройств на Android TV.
+Кастомный Android TV лаунчер (`tv-launcher`) и утилита первоначальной настройки приставки по ADB (`tv-setup`).
 
 ## Структура
 
 - `tv-launcher/` — Android TV лаунчер (`com.tvware.launcher`, Jetpack Compose + TV Material3): главный экран, сетка приложений, медиа-экран с текстами песен (Spicy Lyrics), заставка (`LauncherDreamService`), веб-настройки по QR-коду (`WebSettingsServer`) и автозапуск Happ. Подробности сборки и установки: `tv-launcher/README.md`.
-- `tv-setup/` — GUI-утилита для Windows 11 (Python 3.12) для первоначальной настройки Android TV по ADB: поиск устройств (mDNS/сеть), установка APK (`tv-launcher`, `Happ`), отключение bloatware, настройка анимаций, заставки и лаунчера по умолчанию.
-- `vendor/custom/` — изолированный слой для LineageOS 24.0 (`custom.mk`, `Android.bp`, оверлеи анимаций `0.25x`, `sysconfig` для `su.happ.proxyutility`, фикс `jaws_logo_deps.mk` для `siso`, скрипт `sync_custom_apks.py`).
-- `manifests/roomservice.xml` — локальный манифест `repo` для `jaws`.
-- `patches/device_xiaomi_jaws.patch` — подключение `vendor/custom/custom.mk` в `device/xiaomi/jaws/lineage_jaws.mk`.
+- `tv-setup/` — GUI-утилита для Windows 11 (Python 3.12) для настройки Android TV по ADB: поиск устройств (mDNS/сеть), установка APK (`tv-launcher`, `Happ`), отключение bloatware, настройка анимаций, заставки и лаунчера по умолчанию.
 - `screenshots/` — скриншоты лаунчера с эмулятора Android TV 12 (`home.png`, `grid.png`, `settings.png`, `context.png`).
 - `docs/superpowers/` — спецификации и планы разработки (`specs/2026-11-25-tv-setup-design.md`, `plans/2026-11-26-tv-setup.md`).
+- `vendor/custom/`, `manifests/`, `patches/` — архивные наработки под сборку LineageOS 24.0 для `jaws` (больше не развиваются).
 
 ## tv-setup
 
