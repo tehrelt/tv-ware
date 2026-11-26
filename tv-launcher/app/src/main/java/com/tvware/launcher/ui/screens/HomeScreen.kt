@@ -76,6 +76,7 @@ fun HomeScreen(
     onToggleMediaPlayPause: () -> Unit,
     onSkipMediaPrevious: () -> Unit,
     onSkipMediaNext: () -> Unit,
+    onToggleLyrics: () -> Unit,
     onOpenMediaApp: () -> Unit,
     onMediaKeyInteraction: () -> Unit,
     modifier: Modifier = Modifier,
@@ -373,6 +374,7 @@ fun HomeScreen(
                 onTogglePlayPause = onToggleMediaPlayPause,
                 onSkipPrevious = onSkipMediaPrevious,
                 onSkipNext = onSkipMediaNext,
+                onToggleLyrics = onToggleLyrics,
                 onOpenApp = onOpenMediaApp,
                 onScrollToApps = onDismissMediaScreen,
                 modifier = Modifier

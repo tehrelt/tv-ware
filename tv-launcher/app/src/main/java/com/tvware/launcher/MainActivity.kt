@@ -87,6 +87,7 @@ class MainActivity : ComponentActivity() {
                         onToggleMediaPlayPause = model::toggleMediaPlayPause,
                         onSkipMediaPrevious = model::skipMediaPrevious,
                         onSkipMediaNext = model::skipMediaNext,
+                        onToggleLyrics = model::toggleLyricsEnabled,
                         onOpenMediaApp = {
                             if (!model.launchMediaApp()) message("Не удалось открыть приложение")
                         },

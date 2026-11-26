@@ -11,7 +11,11 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -85,9 +89,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
@@ -150,6 +156,7 @@ fun MediaScreen(
     onTogglePlayPause: () -> Unit,
     onSkipPrevious: () -> Unit,
     onSkipNext: () -> Unit,
+    onToggleLyrics: () -> Unit = {},
     onOpenApp: () -> Unit,
     onScrollToApps: () -> Unit,
     modifier: Modifier = Modifier,
@@ -284,7 +291,8 @@ fun MediaScreen(
             }
 
             val readyLyrics = if (lyricsEnabled) (lyricsState as? LyricsState.Ready)?.data else null
-            if (readyLyrics != null) {
+            val isLyricsLoading = lyricsEnabled && lyricsState is LyricsState.Loading
+            if (readyLyrics != null || isLyricsLoading) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -345,23 +353,34 @@ fun MediaScreen(
                             MediaControlsRow(
                                 media = media,
                                 isVisible = isVisible && controlsVisible,
+                                lyricsEnabled = lyricsEnabled,
+                                fillWidth = true,
                                 playPauseFocus = playPauseFocus,
                                 onTogglePlayPause = onTogglePlayPause,
                                 onSkipPrevious = onSkipPrevious,
                                 onSkipNext = onSkipNext,
+                                onToggleLyrics = onToggleLyrics,
                                 onOpenApp = onOpenApp,
                             )
                         }
                     }
 
-                    MediaLyricsPanel(
-                        lyrics = readyLyrics,
-                        media = media,
-                        isVisible = isVisible,
-                        modifier = Modifier
-                            .weight(0.58f)
-                            .fillMaxHeight(),
-                    )
+                    if (readyLyrics != null) {
+                        MediaLyricsPanel(
+                            lyrics = readyLyrics,
+                            media = media,
+                            isVisible = isVisible,
+                            modifier = Modifier
+                                .weight(0.58f)
+                                .fillMaxHeight(),
+                        )
+                    } else {
+                        MediaLyricsLoadingPanel(
+                            modifier = Modifier
+                                .weight(0.58f)
+                                .fillMaxHeight(),
+                        )
+                    }
                 }
             } else {
                 Row(
@@ -434,10 +453,12 @@ fun MediaScreen(
                             MediaControlsRow(
                                 media = media,
                                 isVisible = isVisible && controlsVisible,
+                                lyricsEnabled = lyricsEnabled,
                                 playPauseFocus = playPauseFocus,
                                 onTogglePlayPause = onTogglePlayPause,
                                 onSkipPrevious = onSkipPrevious,
                                 onSkipNext = onSkipNext,
+                                onToggleLyrics = onToggleLyrics,
                                 onOpenApp = onOpenApp,
                             )
                         }
@@ -828,8 +849,14 @@ private fun MediaLyricsPanel(
                 }
 
                 if (isActive && lyrics.syncType == LyricsSyncType.SYLLABLE && line.syllables.isNotEmpty()) {
+                    var textLayout by remember(lyrics.trackId, index) {
+                        mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null)
+                    }
+                    val sungColor = LauncherColors.TextPrimary
+                    val unsungColor = LauncherColors.TextPrimary.copy(alpha = 0.26f)
                     val annotated = buildAnnotatedString {
                         line.syllables.forEachIndexed { sylIdx, syl ->
+                            val startChar = length
                             val rawProgress = if (syl.endMs > syl.startMs) {
                                 ((currentPosMs - syl.startMs).toFloat() / (syl.endMs - syl.startMs).toFloat())
                                     .coerceIn(0f, 1f)
@@ -848,22 +875,62 @@ private fun MediaLyricsPanel(
                                 0f
                             }
                             val effect = maxOf(activeGlow, afterGlow)
-                            val color = LauncherColors.TextPrimary.copy(alpha = 0.26f + 0.74f * progress)
-                            withStyle(
-                                SpanStyle(
-                                    color = color,
-                                    shadow = if (effect > 0.01f) {
-                                        Shadow(
-                                            color = Color.White.copy(alpha = 0.7f * effect),
-                                            offset = Offset.Zero,
-                                            blurRadius = 16f * effect,
-                                        )
-                                    } else {
-                                        null
-                                    },
-                                ),
+                            val shadow = if (effect > 0.01f) {
+                                Shadow(
+                                    color = Color.White.copy(alpha = 0.7f * effect),
+                                    offset = Offset.Zero,
+                                    blurRadius = 16f * effect,
+                                )
+                            } else {
+                                null
+                            }
+
+                            val endChar = startChar + syl.text.length
+                            val layout = textLayout
+                            val wipeBrush = if (
+                                rawProgress > 0f &&
+                                rawProgress < 1f &&
+                                layout != null &&
+                                endChar <= layout.layoutInput.text.length
                             ) {
-                                append(syl.text)
+                                val startX = layout.getHorizontalPosition(startChar, usePrimaryDirection = true)
+                                val endX = layout.getHorizontalPosition(endChar, usePrimaryDirection = true)
+                                if (endX > startX + 1f) {
+                                    val wipeX = startX + (endX - startX) * progress
+                                    val feather = ((endX - startX) * 0.28f).coerceAtLeast(10f)
+                                    Brush.horizontalGradient(
+                                        colors = listOf(sungColor, unsungColor),
+                                        startX = wipeX - feather,
+                                        endX = wipeX + feather,
+                                    )
+                                } else {
+                                    null
+                                }
+                            } else {
+                                null
+                            }
+
+                            if (wipeBrush != null) {
+                                val charCount = syl.text.length.coerceAtLeast(1)
+                                syl.text.forEachIndexed { charIdx, ch ->
+                                    val charPhase = (rawProgress * 1.35f - (charIdx.toFloat() / charCount) * 0.35f)
+                                        .coerceIn(0f, 1f)
+                                    val wave = sin(charPhase * PI).toFloat()
+                                    withStyle(
+                                        SpanStyle(
+                                            brush = wipeBrush,
+                                            shadow = shadow,
+                                            baselineShift = if (wave > 0.01f) BaselineShift(0.05f * wave) else BaselineShift.None,
+                                        ),
+                                    ) {
+                                        append(ch)
+                                    }
+                                }
+                            } else {
+                                val color = if (rawProgress >= 1f) sungColor else unsungColor
+                                withStyle(SpanStyle(color = color, shadow = shadow)) {
+                                    append(syl.text)
+                                }
                             }
                             if (!syl.isPartOfWord && sylIdx < line.syllables.lastIndex) {
                                 append(' ')
@@ -873,10 +940,11 @@ private fun MediaLyricsPanel(
                     Text(
                         text = annotated,
                         textAlign = align,
+                        onTextLayout = { textLayout = it },
                         style = TextStyle(
-                            fontSize = 26.sp,
+                            fontSize = 30.sp,
                             fontWeight = FontWeight.SemiBold,
-                            lineHeight = 34.sp,
+                            lineHeight = 38.sp,
                         ),
                         modifier = lineModifier,
                     )
@@ -885,9 +953,9 @@ private fun MediaLyricsPanel(
                         text = line.text,
                         textAlign = align,
                         style = TextStyle(
-                            fontSize = 26.sp,
+                            fontSize = 30.sp,
                             fontWeight = FontWeight.SemiBold,
-                            lineHeight = 34.sp,
+                            lineHeight = 38.sp,
                             color = LauncherColors.TextPrimary,
                             shadow = if (isActive) {
                                 Shadow(
@@ -917,6 +985,42 @@ private fun MediaLyricsPanel(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 8.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun MediaLyricsLoadingPanel(
+    modifier: Modifier = Modifier,
+) {
+    val transition = rememberInfiniteTransition(label = "lyricsLoading")
+    val widths = remember { listOf(0.68f, 0.52f, 0.84f, 0.60f, 0.46f) }
+    Column(
+        modifier = modifier.focusProperties { canFocus = false },
+        verticalArrangement = Arrangement.spacedBy(22.dp, Alignment.CenterVertically),
+    ) {
+        widths.forEachIndexed { index, widthFraction ->
+            val pulse by transition.animateFloat(
+                initialValue = 0.10f,
+                targetValue = 0.28f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(
+                        durationMillis = 900,
+                        delayMillis = index * 120,
+                        easing = FastOutSlowInEasing,
+                    ),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "lyricSkeleton$index",
+            )
+            val isCenter = index == 2
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(widthFraction)
+                    .height(if (isCenter) 30.dp else 24.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(LauncherColors.TextPrimary.copy(alpha = if (isCenter) pulse * 1.35f else pulse)),
             )
         }
     }
@@ -1033,16 +1137,19 @@ private fun MediaChromeSlot(visible: Boolean, height: Dp, content: @Composable (
 private fun MediaControlsRow(
     media: MediaSessionInfo,
     isVisible: Boolean,
+    lyricsEnabled: Boolean,
+    fillWidth: Boolean = false,
     playPauseFocus: FocusRequester,
     onTogglePlayPause: () -> Unit,
     onSkipPrevious: () -> Unit,
     onSkipNext: () -> Unit,
+    onToggleLyrics: () -> Unit,
     onOpenApp: () -> Unit,
 ) {
     Row(
-        modifier = Modifier.focusGroup(),
+        modifier = (if (fillWidth) Modifier.fillMaxWidth() else Modifier).focusGroup(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        horizontalArrangement = if (fillWidth) Arrangement.SpaceBetween else Arrangement.spacedBy(14.dp),
     ) {
         if (media.canSkipPrevious) {
             MediaCircleButton(
@@ -1082,11 +1189,60 @@ private fun MediaControlsRow(
             }
         }
 
-        MediaPillButton(
-            label = "Открыть",
+        MediaCircleButton(
+            description = if (lyricsEnabled) "Скрыть текст песни" else "Показать текст песни",
+            size = 52.dp,
+            canFocus = isVisible,
+            onClick = onToggleLyrics,
+        ) { tint ->
+            LyricsIcon(
+                tint = if (lyricsEnabled) tint else tint.copy(alpha = 0.42f),
+                modifier = Modifier.size(20.dp),
+            )
+        }
+
+        MediaCircleButton(
+            description = "Открыть приложение",
+            size = 52.dp,
             canFocus = isVisible,
             onClick = onOpenApp,
             modifier = if (!media.canPlayPause) Modifier.focusRequester(playPauseFocus) else Modifier,
+        ) { tint ->
+            OpenExternalIcon(tint = tint, modifier = Modifier.size(20.dp))
+        }
+    }
+}
+
+@Composable
+private fun LyricsIcon(
+    tint: Color,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier = modifier) {
+        val stroke = size.minDimension * 0.11f
+        val y1 = size.height * 0.24f
+        val y2 = size.height * 0.50f
+        val y3 = size.height * 0.76f
+        drawLine(
+            color = tint,
+            start = Offset(size.width * 0.14f, y1),
+            end = Offset(size.width * 0.86f, y1),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color = tint,
+            start = Offset(size.width * 0.14f, y2),
+            end = Offset(size.width * 0.72f, y2),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color = tint,
+            start = Offset(size.width * 0.14f, y3),
+            end = Offset(size.width * 0.54f, y3),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
         )
     }
 }
@@ -1156,22 +1312,24 @@ private fun MediaPillButton(
             focusedBorder = Border.None,
         ),
         modifier = modifier
-            .height(52.dp)
+            .height(46.dp)
             .focusProperties { this.canFocus = canFocus }
             .onFocusChanged { isFocused = it.isFocused },
     ) {
         Row(
             modifier = Modifier
-                .height(52.dp)
-                .padding(horizontal = 20.dp),
+                .height(46.dp)
+                .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            OpenExternalIcon(tint = tint, modifier = Modifier.size(16.dp))
+            OpenExternalIcon(tint = tint, modifier = Modifier.size(15.dp))
             Text(
                 text = label,
+                maxLines = 1,
+                softWrap = false,
                 style = TextStyle(
-                    fontSize = 15.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                     color = tint,
                 ),

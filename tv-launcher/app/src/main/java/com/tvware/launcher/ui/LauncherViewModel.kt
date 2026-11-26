@@ -513,6 +513,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun toggleLyricsEnabled() {
+        viewModelScope.launch {
+            preferences.setLyricsEnabled(!uiState.value.lyricsEnabled)
+        }
+    }
+
     fun setDebugMediaPreview(
         enabled: Boolean,
         positionMs: Long = 12_000L,
@@ -705,7 +711,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             mediaScreenEnabled = settings.mediaScreenEnabled,
             lyricsEnabled = settings.lyricsEnabled,
             hasSpicyLyricsKey = settings.spicyLyricsApiKey.isNotBlank(),
-            lyricsState = bundle.lyrics,
+            lyricsState = if (settings.lyricsEnabled) bundle.lyrics else LyricsState.Idle,
             webSettingsUrl = bundle.webUrl,
             autoStartHapp = settings.autoStartHapp,
             mediaState = mediaState,
