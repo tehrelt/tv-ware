@@ -1,4 +1,10 @@
 .claude/
+__pycache__/
+*.pyc
+tv-setup/.venv/
+tv-setup/tools/
+tv-setup/apks/
+tv-setup/state/
 .gradle/
 .kotlin/
 tv-launcher/build/
