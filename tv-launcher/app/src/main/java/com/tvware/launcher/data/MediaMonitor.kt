@@ -17,6 +17,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.util.Log
 import android.util.LruCache
 import android.view.KeyEvent
 import androidx.compose.ui.graphics.ImageBitmap
@@ -342,11 +343,15 @@ class MediaMonitor(
             cancelArtworkLoad()
         }
 
-        val displayArtwork = cachedArtwork ?: if (
-            artworkKey != null &&
-            currentMedia?.sessionKey == controller.sessionToken.toString()
-        ) {
-            currentMedia.artwork
+        val isSameTrack = currentMedia != null &&
+            currentMedia.sessionKey == trackKey.sessionKey &&
+            currentMedia.mediaId == trackKey.mediaId &&
+            currentMedia.title == title &&
+            currentMedia.artist == artist &&
+            currentMedia.album == album
+
+        val displayArtwork = cachedArtwork ?: if (artworkKey != null && isSameTrack) {
+            currentMedia?.artwork
         } else {
             null
         }
@@ -392,7 +397,19 @@ class MediaMonitor(
                 val loaded = withContext(Dispatchers.IO) {
                     val fromBitmap = embeddedBitmap?.let(::scaleBitmapIfNeeded)
                     fromBitmap ?: artworkUri?.let(::loadBitmapFromUri)
-                } ?: return@launch
+                }
+                if (loaded == null) {
+                    Log.w("MediaMonitor", "Failed to load artwork for key=$artworkKey uri=$artworkUri")
+                    runOnMain {
+                        val current = _state.value.activeMedia ?: return@runOnMain
+                        if (current.artworkKey == artworkKey && current.artwork != null) {
+                            _state.value = _state.value.copy(
+                                activeMedia = current.copy(artwork = null),
+                            )
+                        }
+                    }
+                    return@launch
+                }
 
                 artworkCache.put(artworkKey, loaded)
                 runOnMain {
