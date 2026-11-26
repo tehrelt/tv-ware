@@ -706,7 +706,7 @@ private fun MediaLyricsPanel(
                 layoutInfo = listState.layoutInfo
                 itemInfo = layoutInfo.visibleItemsInfo.firstOrNull { it.index == anchorIndex }
             }
-            val viewportHeight = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
+            val viewportHeight = layoutInfo.viewportSize.height
             if (itemInfo != null && viewportHeight > 0) {
                 val targetOffset = (viewportHeight - itemInfo.size) / 2
                 val delta = (itemInfo.offset - targetOffset).toFloat()
