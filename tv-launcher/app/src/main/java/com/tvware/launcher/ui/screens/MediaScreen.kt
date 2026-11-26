@@ -11,7 +11,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -89,7 +88,6 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
@@ -666,20 +664,48 @@ private fun MediaLyricsPanel(
             if (lyrics.syncType == LyricsSyncType.SYLLABLE) {
                 withFrameNanos { }
             } else {
-                delay(120L)
+                delay(32L)
             }
         }
     }
 
-    val activeIndex = findActiveLyricLineIndex(lyrics.lines, currentPosMs, lyrics.syncType)
-    val listState = rememberLazyListState()
+    val rawActiveIndex = findActiveLyricLineIndex(lyrics.lines, currentPosMs, lyrics.syncType)
     val isSynced = lyrics.syncType != LyricsSyncType.STATIC
-    val anchorIndex = if (activeIndex >= 0) activeIndex else 0
+    val idleGap: Triple<Int, Long, Long>? = remember(lyrics, rawActiveIndex, currentPosMs, isSynced) {
+        if (!isSynced || lyrics.lines.isEmpty()) {
+            null
+        } else if (rawActiveIndex < 0) {
+            val firstStart = lyrics.lines.first().startMs
+            if (firstStart > 0L) Triple(0, 0L, firstStart) else null
+        } else {
+            val currentLine = lyrics.lines[rawActiveIndex]
+            val nextIndex = rawActiveIndex + 1
+            if (currentLine.endMs > 0L && currentPosMs > currentLine.endMs && nextIndex < lyrics.lines.size) {
+                val nextStart = lyrics.lines[nextIndex].startMs
+                if (nextStart - currentLine.endMs >= 2500L) {
+                    Triple(nextIndex, currentLine.endMs, nextStart)
+                } else {
+                    null
+                }
+            } else {
+                null
+            }
+        }
+    }
+    val activeIndex = if (idleGap != null) -1 else rawActiveIndex
+    val listState = rememberLazyListState()
+    val anchorIndex = idleGap?.first ?: if (activeIndex >= 0) activeIndex else 0
 
-    LaunchedEffect(lyrics.trackId, activeIndex) {
-        if (activeIndex in lyrics.lines.indices) {
-            val layoutInfo = listState.layoutInfo
-            val itemInfo = layoutInfo.visibleItemsInfo.firstOrNull { it.index == activeIndex }
+    LaunchedEffect(lyrics.trackId, anchorIndex, isSynced) {
+        if (isSynced && anchorIndex in lyrics.lines.indices) {
+            var layoutInfo = listState.layoutInfo
+            var itemInfo = layoutInfo.visibleItemsInfo.firstOrNull { it.index == anchorIndex }
+            if (itemInfo == null) {
+                listState.scrollToItem(index = anchorIndex)
+                withFrameNanos { }
+                layoutInfo = listState.layoutInfo
+                itemInfo = layoutInfo.visibleItemsInfo.firstOrNull { it.index == anchorIndex }
+            }
             val viewportHeight = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
             if (itemInfo != null && viewportHeight > 0) {
                 val targetOffset = (viewportHeight - itemInfo.size) / 2
@@ -687,12 +713,9 @@ private fun MediaLyricsPanel(
                 if (abs(delta) > 1f) {
                     listState.animateScrollBy(
                         value = delta,
-                        animationSpec = tween(durationMillis = 480, easing = FastOutSlowInEasing),
+                        animationSpec = tween(durationMillis = 380, easing = FastOutSlowInEasing),
                     )
                 }
-            } else {
-                val fallbackOffset = if (viewportHeight > 0) -(viewportHeight / 3) else -160
-                listState.animateScrollToItem(index = activeIndex, scrollOffset = fallbackOffset)
             }
         }
     }
@@ -706,7 +729,7 @@ private fun MediaLyricsPanel(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            contentPadding = PaddingValues(vertical = 220.dp),
+            contentPadding = PaddingValues(vertical = 160.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             itemsIndexed(
@@ -724,7 +747,7 @@ private fun MediaLyricsPanel(
                 }
                 val scale by animateFloatAsState(
                     targetValue = targetScale,
-                    animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
+                    animationSpec = tween(durationMillis = 380, easing = FastOutSlowInEasing),
                     label = "lyricScale",
                 )
 
@@ -739,25 +762,19 @@ private fun MediaLyricsPanel(
                 val lineAlpha by animateFloatAsState(
                     targetValue = targetAlpha,
                     animationSpec = tween(
-                        durationMillis = if (distance >= 3) 200 else 420,
+                        durationMillis = if (distance >= 3) 180 else 380,
                         easing = FastOutSlowInEasing,
                     ),
                     label = "lyricAlpha",
                 )
 
-                val targetBlur = when {
+                val lineBlur = when {
                     !isSynced -> 0.dp
                     isActive -> 0.dp
-                    distance == 0 -> 1.5.dp
-                    distance == 1 -> 4.dp
-                    distance == 2 -> 9.dp
-                    else -> 14.dp
+                    distance == 0 -> 1.dp
+                    distance == 1 -> 2.5.dp
+                    else -> 5.dp
                 }
-                val lineBlur by animateDpAsState(
-                    targetValue = targetBlur,
-                    animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
-                    label = "lyricBlur",
-                )
 
                 val lineModifier = Modifier
                     .fillMaxWidth()
@@ -774,6 +791,40 @@ private fun MediaLyricsPanel(
                         scaleY = scale
                         transformOrigin = TransformOrigin(if (line.isOppositeAligned) 1f else 0f, 0.5f)
                     }
+
+                val gap = idleGap
+                if (gap != null && gap.first == index) {
+                    val gapProgress = ((currentPosMs - gap.second).toFloat() /
+                        (gap.third - gap.second).coerceAtLeast(1L).toFloat()).coerceIn(0f, 1f)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 14.dp),
+                        horizontalArrangement = if (line.isOppositeAligned) {
+                            Arrangement.spacedBy(10.dp, Alignment.End)
+                        } else {
+                            Arrangement.spacedBy(10.dp, Alignment.Start)
+                        },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        for (dotIndex in 0 until 3) {
+                            val dotStart = dotIndex / 3f
+                            val dotProgress = ((gapProgress - dotStart) * 3f).coerceIn(0f, 1f)
+                            val dotScale = 0.85f + 0.25f * dotProgress
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .graphicsLayer {
+                                        alpha = 0.22f + 0.78f * dotProgress
+                                        scaleX = dotScale
+                                        scaleY = dotScale
+                                    }
+                                    .clip(CircleShape)
+                                    .background(LauncherColors.TextPrimary),
+                            )
+                        }
+                    }
+                }
 
                 if (isActive && lyrics.syncType == LyricsSyncType.SYLLABLE && line.syllables.isNotEmpty()) {
                     val annotated = buildAnnotatedString {
@@ -800,12 +851,11 @@ private fun MediaLyricsPanel(
                             withStyle(
                                 SpanStyle(
                                     color = color,
-                                    baselineShift = if (effect > 0.01f) BaselineShift(0.055f * effect) else BaselineShift.None,
                                     shadow = if (effect > 0.01f) {
                                         Shadow(
                                             color = Color.White.copy(alpha = 0.7f * effect),
                                             offset = Offset.Zero,
-                                            blurRadius = 18f * effect,
+                                            blurRadius = 16f * effect,
                                         )
                                     } else {
                                         null
