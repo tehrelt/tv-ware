@@ -500,8 +500,7 @@ internal fun MediaBackdrop(
             animate = animate,
             modifier = Modifier
                 .fillMaxSize()
-                .alpha(0.60f)
-                .blur(72.dp, edgeTreatment = BlurredEdgeTreatment.Rectangle),
+                .graphicsLayer { alpha = 0.60f },
         )
     }
     val scrim = if (artwork != null) {
@@ -815,28 +814,8 @@ private fun MediaLyricsPanel(
                     label = "lyricAlpha",
                 )
 
-                val targetBlur = when {
-                    !isSynced -> 0.dp
-                    isActive -> 0.dp
-                    distance == 0 -> 1.dp
-                    distance == 1 -> 2.5.dp
-                    else -> 5.dp
-                }
-                val lineBlur by animateDpAsState(
-                    targetValue = targetBlur,
-                    animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing),
-                    label = "lyricBlur",
-                )
-
                 val lineModifier = Modifier
                     .fillMaxWidth()
-                    .then(
-                        if (lineBlur > 0.dp) {
-                            Modifier.blur(lineBlur, BlurredEdgeTreatment.Unbounded)
-                        } else {
-                            Modifier
-                        },
-                    )
                     .graphicsLayer {
                         alpha = lineAlpha
                         scaleX = scale

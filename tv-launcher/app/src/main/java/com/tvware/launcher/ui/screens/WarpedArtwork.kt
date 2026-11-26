@@ -21,7 +21,8 @@ import kotlin.math.sin
 
 private const val MeshSize = 12
 private const val WarpPeriodMs = 18_000
-private const val SoftWarpMaxPx = 96
+private const val SoftWarpMaxPx = 48
+private const val SoftWarpBlurRadius = 5
 
 @Composable
 internal fun WarpedArtwork(artwork: ImageBitmap, animate: Boolean, modifier: Modifier = Modifier) {
@@ -76,10 +77,63 @@ internal fun warpArtworkMesh(vertices: FloatArray, divisions: Int, width: Float,
 }
 
 private fun prepareSoftWarpBitmap(source: Bitmap): Bitmap {
+    if (source.width <= 0 || source.height <= 0) return source
     val maxDim = maxOf(source.width, source.height)
-    if (maxDim <= SoftWarpMaxPx || source.width <= 0 || source.height <= 0) return source
-    val scale = SoftWarpMaxPx.toFloat() / maxDim
-    val w = (source.width * scale).toInt().coerceAtLeast(1)
-    val h = (source.height * scale).toInt().coerceAtLeast(1)
-    return runCatching { Bitmap.createScaledBitmap(source, w, h, true) }.getOrDefault(source)
+    val scaled = if (maxDim > SoftWarpMaxPx) {
+        val scale = SoftWarpMaxPx.toFloat() / maxDim
+        val w = (source.width * scale).toInt().coerceAtLeast(1)
+        val h = (source.height * scale).toInt().coerceAtLeast(1)
+        runCatching { Bitmap.createScaledBitmap(source, w, h, true) }.getOrDefault(source)
+    } else {
+        source
+    }
+    return boxBlurBitmap(scaled, SoftWarpBlurRadius)
+}
+
+// Pre-blur the tiny warp bitmap once per track change to avoid a full-screen GPU blur every frame.
+private fun boxBlurBitmap(source: Bitmap, radius: Int): Bitmap {
+    val w = source.width
+    val h = source.height
+    if (w <= 1 || h <= 1 || radius <= 0) return source
+    val argb = if (source.config == Bitmap.Config.ARGB_8888) source else source.copy(Bitmap.Config.ARGB_8888, false)
+    val pixels = IntArray(w * h)
+    val temp = IntArray(w * h)
+    argb.getPixels(pixels, 0, w, 0, 0, w, h)
+    repeat(2) {
+        boxBlurPass(pixels, temp, w, h, radius, horizontal = true)
+        boxBlurPass(temp, pixels, w, h, radius, horizontal = false)
+    }
+    return Bitmap.createBitmap(pixels, w, h, Bitmap.Config.ARGB_8888)
+}
+
+private fun boxBlurPass(src: IntArray, dst: IntArray, w: Int, h: Int, radius: Int, horizontal: Boolean) {
+    val outer = if (horizontal) h else w
+    val inner = if (horizontal) w else h
+    val window = radius * 2 + 1
+    for (o in 0 until outer) {
+        var aSum = 0
+        var rSum = 0
+        var gSum = 0
+        var bSum = 0
+        for (k in -radius..radius) {
+            val idx = k.coerceIn(0, inner - 1)
+            val c = src[if (horizontal) o * w + idx else idx * w + o]
+            aSum += (c ushr 24) and 0xFF
+            rSum += (c ushr 16) and 0xFF
+            gSum += (c ushr 8) and 0xFF
+            bSum += c and 0xFF
+        }
+        for (i in 0 until inner) {
+            dst[if (horizontal) o * w + i else i * w + o] =
+                ((aSum / window) shl 24) or ((rSum / window) shl 16) or ((gSum / window) shl 8) or (bSum / window)
+            val addIdx = (i + radius + 1).coerceAtMost(inner - 1)
+            val remIdx = (i - radius).coerceAtLeast(0)
+            val addC = src[if (horizontal) o * w + addIdx else addIdx * w + o]
+            val remC = src[if (horizontal) o * w + remIdx else remIdx * w + o]
+            aSum += ((addC ushr 24) and 0xFF) - ((remC ushr 24) and 0xFF)
+            rSum += ((addC ushr 16) and 0xFF) - ((remC ushr 16) and 0xFF)
+            gSum += ((addC ushr 8) and 0xFF) - ((remC ushr 8) and 0xFF)
+            bSum += (addC and 0xFF) - (remC and 0xFF)
+        }
+    }
 }

@@ -240,9 +240,7 @@ fun HomeScreen(
                 WarpedArtwork(
                     artwork = glowArtwork,
                     animate = !uiState.showMediaScreen && playingArtwork != null,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .blur(72.dp, edgeTreatment = BlurredEdgeTreatment.Rectangle),
+                    modifier = Modifier.fillMaxSize(),
                 )
             }
         }
