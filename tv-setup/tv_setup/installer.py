@@ -247,6 +247,20 @@ def _open_https(url: str, accept: str | None = None):
     return response
 
 
+def _release_sort_key(
+    item: dict, tag_prefix: str | None
+) -> tuple[tuple[int, ...], str]:
+    tag_name = item.get("tag_name", "")
+    suffix = (
+        tag_name[len(tag_prefix) :]
+        if tag_prefix and tag_name.startswith(tag_prefix)
+        else tag_name
+    )
+    version_parts = tuple(int(part) for part in re.findall(r"\d+", suffix))
+    published_at = item.get("published_at") or item.get("created_at") or ""
+    return version_parts, published_at if isinstance(published_at, str) else ""
+
+
 def _fetch_release_json(
     url: str,
     tag_prefix: str | None = None,
@@ -257,6 +271,7 @@ def _fetch_release_json(
     if isinstance(payload, dict):
         return payload
     if isinstance(payload, list):
+        candidates: list[dict] = []
         for item in payload:
             if (
                 not isinstance(item, dict)
@@ -276,7 +291,9 @@ def _fetch_release_json(
                     for asset in assets
                 ):
                     continue
-            return item
+            candidates.append(item)
+        if candidates:
+            return max(candidates, key=lambda item: _release_sort_key(item, tag_prefix))
         raise ValueError(f"No matching release found at {url}")
     raise ValueError("GitHub release response must be a JSON object or list")
 

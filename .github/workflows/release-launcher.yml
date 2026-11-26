@@ -53,7 +53,7 @@ jobs:
           tag_name: launcher-v1.0.${{ github.run_number }}
           name: TV Launcher 1.0.${{ github.run_number }}
           target_commitish: ${{ github.sha }}
-          make_latest: false
+          make_latest: true
           fail_on_unmatched_files: true
           files: tv-launcher.apk
       - name: Update launcher download for existing installers

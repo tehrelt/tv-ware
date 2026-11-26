@@ -632,9 +632,24 @@ class InstallerTests(unittest.TestCase):
                 ],
             },
             {
+                "tag_name": "launcher-v1.0.9",
+                "draft": False,
+                "prerelease": False,
+                "published_at": "2026-11-26T11:00:00Z",
+                "assets": [
+                    {
+                        "id": 904,
+                        "name": "tv-launcher.apk",
+                        "updated_at": "2026-11-26T11:00:00Z",
+                        "browser_download_url": "https://github.com/tehrelt/tv-ware/releases/download/launcher-v1.0.9/tv-launcher.apk",
+                    }
+                ],
+            },
+            {
                 "tag_name": "launcher-v1.0.12",
                 "draft": False,
                 "prerelease": False,
+                "published_at": "2026-11-26T12:00:00Z",
                 "assets": [
                     {
                         "id": 905,
@@ -649,7 +664,7 @@ class InstallerTests(unittest.TestCase):
         def fake_urlopen(req, timeout=None):
             if req.full_url == REPO_SOURCES[0].release_url:
                 return _json_response(releases, req.full_url)
-            if req.full_url == releases[2]["assets"][0]["browser_download_url"]:
+            if req.full_url == releases[3]["assets"][0]["browser_download_url"]:
                 return _bytes_response(b"LAUNCHER_V12")
             raise AssertionError(f"Unexpected URL: {req.full_url}")
 
