@@ -894,7 +894,7 @@ private fun MediaLyricsPanel(
                                 null
                             }
 
-                            val fallMs = 220f
+                            val fallMs = 560f
                             val hasWaveTail = rawProgress > 0f &&
                                 (rawProgress < 1f || (syl.endMs > 0L && currentPosMs < syl.endMs + fallMs.toLong()))
 
@@ -904,8 +904,8 @@ private fun MediaLyricsPanel(
                                 } else {
                                     1f + ((currentPosMs - syl.endMs).toFloat() / fallMs).coerceAtLeast(0f)
                                 }
-                                val riseSpan = 0.18f
-                                val fallSpan = 0.55f
+                                val riseSpan = 0.28f
+                                val fallSpan = 1.15f
                                 val sylStartX = layout.getHorizontalPosition(startChar, usePrimaryDirection = true)
                                 val sylEndX = layout.getHorizontalPosition(endChar, usePrimaryDirection = true)
                                 val sylSpanX = (sylEndX - sylStartX).coerceAtLeast(1f)
@@ -990,7 +990,7 @@ private fun MediaLyricsPanel(
                                     val pivotX = (box.left + box.right) * 0.5f
                                     scale(
                                         scaleX = 1f,
-                                        scaleY = 1f + 0.10f * wave,
+                                        scaleY = 1f + 0.16f * wave,
                                         pivot = Offset(pivotX, baselineY),
                                     ) {
                                         clipRect(box.left, top, box.right, bottom) {
