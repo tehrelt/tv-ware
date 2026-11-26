@@ -93,11 +93,12 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextGeometricTransform
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Border
@@ -813,6 +814,7 @@ private fun MediaLyricsPanel(
                         scaleY = scale
                         transformOrigin = TransformOrigin(if (line.isOppositeAligned) 1f else 0f, 0.5f)
                     }
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
 
                 val gap = idleGap
                 if (gap != null && gap.first == index) {
@@ -910,19 +912,47 @@ private fun MediaLyricsPanel(
                                 null
                             }
 
-                            if (wipeBrush != null) {
+                            val sylDurationMs = (syl.endMs - syl.startMs).coerceAtLeast(120L).toFloat()
+                            val fallMs = 240f
+                            val hasWaveTail = rawProgress > 0f &&
+                                (rawProgress < 1f || (syl.endMs > 0L && currentPosMs < syl.endMs + fallMs.toLong()))
+
+                            if (wipeBrush != null || (rawProgress >= 1f && hasWaveTail)) {
                                 val charCount = syl.text.length.coerceAtLeast(1)
+                                val riseMs = (sylDurationMs * 0.45f).coerceIn(90f, 180f)
                                 syl.text.forEachIndexed { charIdx, ch ->
-                                    val charPhase = (rawProgress * 1.35f - (charIdx.toFloat() / charCount) * 0.35f)
-                                        .coerceIn(0f, 1f)
-                                    val wave = sin(charPhase * PI).toFloat()
-                                    withStyle(
+                                    val charOffsetMs = (charIdx.toFloat() / charCount) * (sylDurationMs * 0.65f)
+                                    val elapsed = (currentPosMs - syl.startMs).toFloat() - charOffsetMs
+                                    val wave = when {
+                                        elapsed <= 0f -> 0f
+                                        elapsed < riseMs -> {
+                                            val t = (elapsed / riseMs).coerceIn(0f, 1f)
+                                            t * t * (3f - 2f * t)
+                                        }
+                                        elapsed < riseMs + fallMs -> {
+                                            val t = (1f - (elapsed - riseMs) / fallMs).coerceIn(0f, 1f)
+                                            t * t * (3f - 2f * t)
+                                        }
+                                        else -> 0f
+                                    }
+                                    val scaleY = 1f + 0.12f * wave
+                                    val hasWave = wave > 0.01f
+                                    val spanStyle = if (wipeBrush != null) {
                                         SpanStyle(
                                             brush = wipeBrush,
                                             shadow = shadow,
-                                            baselineShift = if (wave > 0.01f) BaselineShift(0.05f * wave) else BaselineShift.None,
-                                        ),
-                                    ) {
+                                            fontSize = if (hasWave) (30f * scaleY).sp else TextUnit.Unspecified,
+                                            textGeometricTransform = if (hasWave) TextGeometricTransform(scaleX = 1f / scaleY) else null,
+                                        )
+                                    } else {
+                                        SpanStyle(
+                                            color = sungColor,
+                                            shadow = shadow,
+                                            fontSize = if (hasWave) (30f * scaleY).sp else TextUnit.Unspecified,
+                                            textGeometricTransform = if (hasWave) TextGeometricTransform(scaleX = 1f / scaleY) else null,
+                                        )
+                                    }
+                                    withStyle(spanStyle) {
                                         append(ch)
                                     }
                                 }
