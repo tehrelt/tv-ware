@@ -932,7 +932,7 @@ private fun MediaLyricsPanel(
                                     val box = layout.getBoundingBox(absIdx)
                                     val charCenterX = (box.left + box.right) * 0.5f
                                     val charNormX = ((charCenterX - sylStartX) / sylSpanX).coerceIn(0f, 1f)
-                                    val delta = effectiveProgress - charNormX
+                                    val delta = effectiveProgress - charNormX + 0.25f
                                     val wave = when {
                                         delta <= 0f -> 0f
                                         delta < riseSpan -> {
