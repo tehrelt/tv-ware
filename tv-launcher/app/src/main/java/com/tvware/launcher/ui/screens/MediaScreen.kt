@@ -7,11 +7,17 @@ import android.content.IntentFilter
 import android.os.SystemClock
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateDpAsState
@@ -301,174 +307,228 @@ fun MediaScreen(
 
             val readyLyrics = if (lyricsEnabled) (lyricsState as? LyricsState.Ready)?.data else null
             val isLyricsLoading = lyricsEnabled && lyricsState is LyricsState.Loading
-            if (readyLyrics != null || isLyricsLoading) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(48.dp),
-                ) {
-                    Column(
-                        modifier = Modifier.weight(0.32f),
-                        verticalArrangement = Arrangement.Center,
+            val hasLyricsSlot = readyLyrics != null || isLyricsLoading
+            Crossfade(
+                targetState = hasLyricsSlot,
+                animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                label = "mediaLayout",
+            ) { showLyricsLayout ->
+                if (showLyricsLayout) {
+                    Row(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(48.dp),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .weight(0.32f)
+                                .animateContentSize(tween(durationMillis = 300, easing = FastOutSlowInEasing)),
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            MediaArtworkCard(
+                                artwork = media.artwork,
+                                title = media.title,
+                                compact = true,
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            AnimatedContent(
+                                targetState = Pair(media.title, media.artist),
+                                transitionSpec = {
+                                    (fadeIn(tween(350, easing = FastOutSlowInEasing)) +
+                                        slideInVertically(tween(350, easing = FastOutSlowInEasing)) { it / 6 })
+                                        .togetherWith(
+                                            fadeOut(tween(200, easing = FastOutSlowInEasing)) +
+                                                slideOutVertically(tween(200, easing = FastOutSlowInEasing)) { -it / 6 },
+                                        )
+                                },
+                                label = "compactTrackMetadata",
+                            ) { (title, artist) ->
+                                Column {
+                                    Text(
+                                        text = title,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                        style = TextStyle(
+                                            fontSize = 24.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            lineHeight = 30.sp,
+                                            color = LauncherColors.TextPrimary,
+                                        ),
+                                    )
+
+                                    if (artist.isNotBlank()) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = artist,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            style = TextStyle(
+                                                fontSize = 16.sp,
+                                                fontWeight = FontWeight.Normal,
+                                                color = LauncherColors.TextSecondary,
+                                            ),
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (media.durationMs > 0L) {
+                                Spacer(modifier = Modifier.height(14.dp))
+                                MediaProgressSection(
+                                    media = media,
+                                    isVisible = isVisible,
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            MediaChromeSlot(visible = controlsVisible, height = 56.dp) {
+                                MediaControlsRow(
+                                    media = media,
+                                    isVisible = isVisible && controlsVisible,
+                                    lyricsEnabled = lyricsEnabled,
+                                    fillWidth = true,
+                                    playPauseFocus = playPauseFocus,
+                                    onTogglePlayPause = onTogglePlayPause,
+                                    onSkipPrevious = onSkipPrevious,
+                                    onSkipNext = onSkipNext,
+                                    onToggleLyrics = onToggleLyrics,
+                                    onOpenApp = onOpenApp,
+                                )
+                            }
+                        }
+
+                        val lyricsSlotState: Any = readyLyrics ?: "loading"
+                        AnimatedContent(
+                            targetState = lyricsSlotState,
+                            transitionSpec = {
+                                fadeIn(tween(380, easing = FastOutSlowInEasing))
+                                    .togetherWith(fadeOut(tween(220, easing = FastOutSlowInEasing)))
+                            },
+                            contentKey = { state ->
+                                when (state) {
+                                    is LyricsData -> "ready:${state.trackId}"
+                                    else -> state
+                                }
+                            },
+                            modifier = Modifier
+                                .weight(0.68f)
+                                .fillMaxHeight(),
+                            label = "lyricsPanel",
+                        ) { slotState ->
+                            when (slotState) {
+                                is LyricsData -> MediaLyricsPanel(
+                                    lyrics = slotState,
+                                    media = media,
+                                    isVisible = isVisible,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                                else -> MediaLyricsLoadingPanel(
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(48.dp),
                     ) {
                         MediaArtworkCard(
                             artwork = media.artwork,
                             title = media.title,
-                            compact = true,
                         )
 
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Text(
-                            text = media.title,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            style = TextStyle(
-                                fontSize = 24.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                lineHeight = 30.sp,
-                                color = LauncherColors.TextPrimary,
-                            ),
-                        )
-
-                        if (media.artist.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = media.artist,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                style = TextStyle(
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Normal,
-                                    color = LauncherColors.TextSecondary,
-                                ),
-                            )
-                        }
-
-                        if (media.durationMs > 0L) {
-                            Spacer(modifier = Modifier.height(14.dp))
-                            MediaProgressSection(
-                                media = media,
-                                isVisible = isVisible,
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        MediaChromeSlot(visible = controlsVisible, height = 56.dp) {
-                            MediaControlsRow(
-                                media = media,
-                                isVisible = isVisible && controlsVisible,
-                                lyricsEnabled = lyricsEnabled,
-                                fillWidth = true,
-                                playPauseFocus = playPauseFocus,
-                                onTogglePlayPause = onTogglePlayPause,
-                                onSkipPrevious = onSkipPrevious,
-                                onSkipNext = onSkipNext,
-                                onToggleLyrics = onToggleLyrics,
-                                onOpenApp = onOpenApp,
-                            )
-                        }
-                    }
-
-                    if (readyLyrics != null) {
-                        MediaLyricsPanel(
-                            lyrics = readyLyrics,
-                            media = media,
-                            isVisible = isVisible,
+                        Column(
                             modifier = Modifier
-                                .weight(0.68f)
-                                .fillMaxHeight(),
-                        )
-                    } else {
-                        MediaLyricsLoadingPanel(
-                            modifier = Modifier
-                                .weight(0.68f)
-                                .fillMaxHeight(),
-                        )
-                    }
-                }
-            } else {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(48.dp),
-                ) {
-                    MediaArtworkCard(
-                        artwork = media.artwork,
-                        title = media.title,
-                    )
+                                .weight(1f)
+                                .animateContentSize(tween(durationMillis = 300, easing = FastOutSlowInEasing)),
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            AnimatedContent(
+                                targetState = Triple(media.title, media.artist, media.album),
+                                transitionSpec = {
+                                    (fadeIn(tween(350, easing = FastOutSlowInEasing)) +
+                                        slideInVertically(tween(350, easing = FastOutSlowInEasing)) { it / 6 })
+                                        .togetherWith(
+                                            fadeOut(tween(200, easing = FastOutSlowInEasing)) +
+                                                slideOutVertically(tween(200, easing = FastOutSlowInEasing)) { -it / 6 },
+                                        )
+                                },
+                                label = "fullTrackMetadata",
+                            ) { (title, artist, album) ->
+                                Column {
+                                    Text(
+                                        text = title,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                        style = TextStyle(
+                                            fontSize = 32.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            lineHeight = 38.sp,
+                                            color = LauncherColors.TextPrimary,
+                                        ),
+                                    )
 
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        Text(
-                            text = media.title,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            style = TextStyle(
-                                fontSize = 32.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                lineHeight = 38.sp,
-                                color = LauncherColors.TextPrimary,
-                            ),
-                        )
+                                    if (artist.isNotBlank()) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(
+                                            text = artist,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            style = TextStyle(
+                                                fontSize = 20.sp,
+                                                fontWeight = FontWeight.Normal,
+                                                color = LauncherColors.TextSecondary,
+                                            ),
+                                        )
+                                    }
 
-                        if (media.artist.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = media.artist,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                style = TextStyle(
-                                    fontSize = 20.sp,
-                                    fontWeight = FontWeight.Normal,
-                                    color = LauncherColors.TextSecondary,
-                                ),
-                            )
-                        }
+                                    if (album.isNotBlank()) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = album,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            style = TextStyle(
+                                                fontSize = 15.sp,
+                                                fontWeight = FontWeight.Normal,
+                                                color = LauncherColors.TextMuted,
+                                            ),
+                                        )
+                                    }
+                                }
+                            }
 
-                        if (media.album.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = media.album,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                style = TextStyle(
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Normal,
-                                    color = LauncherColors.TextMuted,
-                                ),
-                            )
-                        }
+                            if (media.durationMs > 0L) {
+                                Spacer(modifier = Modifier.height(24.dp))
+                                MediaProgressSection(
+                                    media = media,
+                                    isVisible = isVisible,
+                                )
+                            }
 
-                        if (media.durationMs > 0L) {
-                            Spacer(modifier = Modifier.height(24.dp))
-                            MediaProgressSection(
-                                media = media,
-                                isVisible = isVisible,
-                            )
-                        }
+                            Spacer(modifier = Modifier.height(28.dp))
 
-                        Spacer(modifier = Modifier.height(28.dp))
-
-                        MediaChromeSlot(visible = controlsVisible, height = 60.dp) {
-                            MediaControlsRow(
-                                media = media,
-                                isVisible = isVisible && controlsVisible,
-                                lyricsEnabled = lyricsEnabled,
-                                playPauseFocus = playPauseFocus,
-                                onTogglePlayPause = onTogglePlayPause,
-                                onSkipPrevious = onSkipPrevious,
-                                onSkipNext = onSkipNext,
-                                onToggleLyrics = onToggleLyrics,
-                                onOpenApp = onOpenApp,
-                            )
+                            MediaChromeSlot(visible = controlsVisible, height = 60.dp) {
+                                MediaControlsRow(
+                                    media = media,
+                                    isVisible = isVisible && controlsVisible,
+                                    lyricsEnabled = lyricsEnabled,
+                                    playPauseFocus = playPauseFocus,
+                                    onTogglePlayPause = onTogglePlayPause,
+                                    onSkipPrevious = onSkipPrevious,
+                                    onSkipNext = onSkipNext,
+                                    onToggleLyrics = onToggleLyrics,
+                                    onOpenApp = onOpenApp,
+                                )
+                            }
                         }
                     }
                 }
@@ -494,27 +554,39 @@ internal fun MediaBackdrop(
         scrimAlpha = 0.72f,
     )
 
-    if (artwork != null) {
-        WarpedArtwork(
-            artwork = artwork,
-            animate = animate,
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer { alpha = 0.60f },
-        )
+    Crossfade(
+        targetState = artwork,
+        animationSpec = tween(durationMillis = 700, easing = FastOutSlowInEasing),
+        label = "backdropArtwork",
+    ) { currentArtwork ->
+        if (currentArtwork != null) {
+            WarpedArtwork(
+                artwork = currentArtwork,
+                animate = animate,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = 0.60f },
+            )
+        }
     }
-    val scrim = if (artwork != null) {
-        Brush.verticalGradient(
-            colors = listOf(
-                LauncherColors.BgBlack.copy(alpha = 0.48f),
-                LauncherColors.BgBlack.copy(alpha = 0.68f),
-                LauncherColors.BgBlack.copy(alpha = 0.90f),
-            ),
-        )
-    } else {
-        Brush.radialGradient(listOf(LauncherColors.Accent.copy(alpha = 0.14f), Color.Transparent))
+    Crossfade(
+        targetState = artwork != null,
+        animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
+        label = "backdropScrim",
+    ) { hasArtwork ->
+        val scrim = if (hasArtwork) {
+            Brush.verticalGradient(
+                colors = listOf(
+                    LauncherColors.BgBlack.copy(alpha = 0.48f),
+                    LauncherColors.BgBlack.copy(alpha = 0.68f),
+                    LauncherColors.BgBlack.copy(alpha = 0.90f),
+                ),
+            )
+        } else {
+            Brush.radialGradient(listOf(LauncherColors.Accent.copy(alpha = 0.14f), Color.Transparent))
+        }
+        Box(Modifier.fillMaxSize().background(scrim))
     }
-    Box(Modifier.fillMaxSize().background(scrim))
 }
 
 @Composable
@@ -625,20 +697,29 @@ internal fun MediaArtworkCard(
     Box(
         modifier = modifier
             .then(cardModifier)
+            .animateContentSize(animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing))
             .clip(cardShape)
             .background(LauncherColors.SurfaceCard.copy(alpha = 0.85f))
             .border(1.dp, LauncherColors.BorderSubtle, cardShape),
         contentAlignment = Alignment.Center,
     ) {
-        if (artwork != null) {
-            Image(
-                bitmap = artwork,
-                contentDescription = title,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else {
-            MusicNoteIcon(tint = LauncherColors.TextMuted, modifier = Modifier.size(64.dp))
+        Crossfade(
+            targetState = artwork,
+            animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing),
+            label = "artworkCard",
+        ) { currentArtwork ->
+            if (currentArtwork != null) {
+                Image(
+                    bitmap = currentArtwork,
+                    contentDescription = title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    MusicNoteIcon(tint = LauncherColors.TextMuted, modifier = Modifier.size(64.dp))
+                }
+            }
         }
     }
 }
