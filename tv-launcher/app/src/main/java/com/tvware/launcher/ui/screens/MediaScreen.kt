@@ -919,6 +919,9 @@ private fun MediaLyricsPanel(
                                 } else {
                                     1f + ((currentPosMs - syl.endMs).toFloat() / fallMs).coerceAtLeast(0f)
                                 }
+                                val sylDurationMs = (syl.endMs - syl.startMs).coerceAtLeast(0L)
+                                val sustainBoost = 1f + ((sylDurationMs - 450L).coerceAtLeast(0L).toFloat() / 950f)
+                                    .coerceIn(0f, 1f) * 0.85f
                                 val riseSpan = 0.45f
                                 val fallSpan = 1.10f
                                 val sylStartX = layout.getHorizontalPosition(startChar, usePrimaryDirection = true)
@@ -943,7 +946,7 @@ private fun MediaLyricsPanel(
                                         else -> 0f
                                     }
                                     if (wave > 0.01f) {
-                                        wavingChars.add(absIdx to wave)
+                                        wavingChars.add(absIdx to wave * sustainBoost)
                                     }
                                 }
                             }
