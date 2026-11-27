@@ -2,6 +2,7 @@ package com.tvware.launcher.ui
 
 import android.app.Application
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.LinearGradient
 import android.graphics.Paint
@@ -648,6 +649,13 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     private fun createDebugArtwork(): ImageBitmap {
+        val decoded = runCatching {
+            getApplication<Application>().assets.open("debug_artwork.jpg").use { stream ->
+                BitmapFactory.decodeStream(stream)
+            }
+        }.getOrNull()
+        if (decoded != null) return decoded.asImageBitmap()
+
         val bmp = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
         val paint = Paint().apply {

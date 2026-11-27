@@ -565,7 +565,7 @@ internal fun MediaBackdrop(
                 animate = animate,
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer { alpha = 0.60f },
+                    .graphicsLayer { alpha = 0.85f },
             )
         }
     }
@@ -577,9 +577,9 @@ internal fun MediaBackdrop(
         val scrim = if (hasArtwork) {
             Brush.verticalGradient(
                 colors = listOf(
-                    LauncherColors.BgBlack.copy(alpha = 0.48f),
-                    LauncherColors.BgBlack.copy(alpha = 0.68f),
-                    LauncherColors.BgBlack.copy(alpha = 0.90f),
+                    LauncherColors.BgBlack.copy(alpha = 0.28f),
+                    LauncherColors.BgBlack.copy(alpha = 0.45f),
+                    LauncherColors.BgBlack.copy(alpha = 0.72f),
                 ),
             )
         } else {

@@ -1,6 +1,7 @@
 package com.tvware.launcher.ui.screens
 
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.graphics.Paint
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -14,15 +15,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.exp
 import kotlin.math.sin
 
-private const val MeshSize = 12
-private const val WarpPeriodMs = 18_000
-private const val SoftWarpMaxPx = 48
-private const val SoftWarpBlurRadius = 5
+private const val MeshSize = 16
+private const val WarpPeriodMs = 14_000
+private const val SampleGridPx = 24
+private const val ColorFieldPx = 64
 
 @Composable
 internal fun WarpedArtwork(artwork: ImageBitmap, animate: Boolean, modifier: Modifier = Modifier) {
@@ -36,7 +39,7 @@ internal fun WarpedArtwork(artwork: ImageBitmap, animate: Boolean, modifier: Mod
     } else {
         null
     }
-    val bitmap = remember(artwork) { prepareSoftWarpBitmap(artwork.asAndroidBitmap()) }
+    val bitmap = remember(artwork) { createColorFieldBitmap(artwork.asAndroidBitmap()) }
     val vertices = remember { FloatArray((MeshSize + 1) * (MeshSize + 1) * 2) }
     val paint = remember { Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG) }
     Canvas(modifier) {
@@ -66,74 +69,102 @@ internal fun warpArtworkMesh(vertices: FloatArray, divisions: Int, width: Float,
         for (column in 0..divisions) {
             val u = column.toFloat() / divisions
             val strength = if (row in 1 until divisions && column in 1 until divisions) {
-                sin(u * PI).toFloat() * sin(v * PI).toFloat() * 0.15f
+                sin(u * PI).toFloat() * sin(v * PI).toFloat() * 0.16f
             } else {
                 0f
             }
-            vertices[index++] = width * (u + strength * sin(cycle + 5f * v))
-            vertices[index++] = height * (v + strength * sin(cycle + 5f * u + 1.6f))
+            val dx = sin(cycle + 4.2f * v + 2.1f * u) + 0.55f * cos(2f * cycle - 3.4f * u + 2.8f * v)
+            val dy = sin(cycle + 4.0f * u - 2.3f * v + 1.4f) + 0.55f * cos(2f * cycle + 3.1f * v + 2.6f * u)
+            vertices[index++] = width * (u + strength * dx)
+            vertices[index++] = height * (v + strength * dy)
         }
     }
 }
 
-private fun prepareSoftWarpBitmap(source: Bitmap): Bitmap {
+private fun createColorFieldBitmap(source: Bitmap): Bitmap {
     if (source.width <= 0 || source.height <= 0) return source
-    val maxDim = maxOf(source.width, source.height)
-    val scaled = if (maxDim > SoftWarpMaxPx) {
-        val scale = SoftWarpMaxPx.toFloat() / maxDim
-        val w = (source.width * scale).toInt().coerceAtLeast(1)
-        val h = (source.height * scale).toInt().coerceAtLeast(1)
-        runCatching { Bitmap.createScaledBitmap(source, w, h, true) }.getOrDefault(source)
-    } else {
-        source
-    }
-    return boxBlurBitmap(scaled, SoftWarpBlurRadius)
-}
+    val sample = runCatching {
+        Bitmap.createScaledBitmap(source, SampleGridPx, SampleGridPx, true)
+    }.getOrDefault(source)
+    val sw = sample.width
+    val sh = sample.height
+    val pixels = IntArray(sw * sh)
+    sample.getPixels(pixels, 0, sw, 0, 0, sw, sh)
 
-// Pre-blur the tiny warp bitmap once per track change to avoid a full-screen GPU blur every frame.
-private fun boxBlurBitmap(source: Bitmap, radius: Int): Bitmap {
-    val w = source.width
-    val h = source.height
-    if (w <= 1 || h <= 1 || radius <= 0) return source
-    val argb = if (source.config == Bitmap.Config.ARGB_8888) source else source.copy(Bitmap.Config.ARGB_8888, false)
-    val pixels = IntArray(w * h)
-    val temp = IntArray(w * h)
-    argb.getPixels(pixels, 0, w, 0, 0, w, h)
-    repeat(2) {
-        boxBlurPass(pixels, temp, w, h, radius, horizontal = true)
-        boxBlurPass(temp, pixels, w, h, radius, horizontal = false)
-    }
-    return Bitmap.createBitmap(pixels, w, h, Bitmap.Config.ARGB_8888)
-}
+    val halfW = sw / 2
+    val halfH = sh / 2
+    val palette = intArrayOf(
+        pickRegionColor(pixels, sw, 0, halfW, 0, halfH),
+        pickRegionColor(pixels, sw, halfW, sw, 0, halfH),
+        pickRegionColor(pixels, sw, 0, halfW, halfH, sh),
+        pickRegionColor(pixels, sw, halfW, sw, halfH, sh),
+        pickRegionColor(pixels, sw, sw / 4, (sw * 3) / 4, sh / 4, (sh * 3) / 4),
+    )
 
-private fun boxBlurPass(src: IntArray, dst: IntArray, w: Int, h: Int, radius: Int, horizontal: Boolean) {
-    val outer = if (horizontal) h else w
-    val inner = if (horizontal) w else h
-    val window = radius * 2 + 1
-    for (o in 0 until outer) {
-        var aSum = 0
-        var rSum = 0
-        var gSum = 0
-        var bSum = 0
-        for (k in -radius..radius) {
-            val idx = k.coerceIn(0, inner - 1)
-            val c = src[if (horizontal) o * w + idx else idx * w + o]
-            aSum += (c ushr 24) and 0xFF
-            rSum += (c ushr 16) and 0xFF
-            gSum += (c ushr 8) and 0xFF
-            bSum += c and 0xFF
-        }
-        for (i in 0 until inner) {
-            dst[if (horizontal) o * w + i else i * w + o] =
-                ((aSum / window) shl 24) or ((rSum / window) shl 16) or ((gSum / window) shl 8) or (bSum / window)
-            val addIdx = (i + radius + 1).coerceAtMost(inner - 1)
-            val remIdx = (i - radius).coerceAtLeast(0)
-            val addC = src[if (horizontal) o * w + addIdx else addIdx * w + o]
-            val remC = src[if (horizontal) o * w + remIdx else remIdx * w + o]
-            aSum += ((addC ushr 24) and 0xFF) - ((remC ushr 24) and 0xFF)
-            rSum += ((addC ushr 16) and 0xFF) - ((remC ushr 16) and 0xFF)
-            gSum += ((addC ushr 8) and 0xFF) - ((remC ushr 8) and 0xFF)
-            bSum += (addC and 0xFF) - (remC and 0xFF)
+    val anchorsX = floatArrayOf(0.18f, 0.82f, 0.22f, 0.78f, 0.50f)
+    val anchorsY = floatArrayOf(0.22f, 0.18f, 0.80f, 0.76f, 0.48f)
+    val rComp = FloatArray(palette.size) { Color.red(palette[it]).toFloat() }
+    val gComp = FloatArray(palette.size) { Color.green(palette[it]).toFloat() }
+    val bComp = FloatArray(palette.size) { Color.blue(palette[it]).toFloat() }
+
+    val out = IntArray(ColorFieldPx * ColorFieldPx)
+    val invSigma = 1f / 0.045f
+    for (y in 0 until ColorFieldPx) {
+        val ny = y.toFloat() / (ColorFieldPx - 1)
+        for (x in 0 until ColorFieldPx) {
+            val nx = x.toFloat() / (ColorFieldPx - 1)
+            var wSum = 0f
+            var rSum = 0f
+            var gSum = 0f
+            var bSum = 0f
+            for (i in palette.indices) {
+                val dx = nx - anchorsX[i]
+                val dy = ny - anchorsY[i]
+                val w = exp(-(dx * dx + dy * dy) * invSigma)
+                wSum += w
+                rSum += rComp[i] * w
+                gSum += gComp[i] * w
+                bSum += bComp[i] * w
+            }
+            val r = (rSum / wSum).toInt().coerceIn(0, 255)
+            val g = (gSum / wSum).toInt().coerceIn(0, 255)
+            val b = (bSum / wSum).toInt().coerceIn(0, 255)
+            out[y * ColorFieldPx + x] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
         }
     }
+    return Bitmap.createBitmap(out, ColorFieldPx, ColorFieldPx, Bitmap.Config.ARGB_8888)
+}
+
+private fun pickRegionColor(
+    pixels: IntArray,
+    stride: Int,
+    xStart: Int,
+    xEnd: Int,
+    yStart: Int,
+    yEnd: Int,
+): Int {
+    val hsv = FloatArray(3)
+    var wSum = 0f
+    var rSum = 0f
+    var gSum = 0f
+    var bSum = 0f
+    for (y in yStart until yEnd) {
+        for (x in xStart until xEnd) {
+            val c = pixels[y * stride + x]
+            Color.colorToHSV(c, hsv)
+            val sat = hsv[1]
+            val valLum = hsv[2]
+            // Favor saturated, non-black pixels so complementary colors don't average to gray mud.
+            val weight = (0.15f + sat * sat * 3.0f) * (0.25f + valLum)
+            wSum += weight
+            rSum += Color.red(c) * weight
+            gSum += Color.green(c) * weight
+            bSum += Color.blue(c) * weight
+        }
+    }
+    if (wSum <= 0f) return Color.BLACK
+    val r = (rSum / wSum).toInt().coerceIn(0, 255)
+    val g = (gSum / wSum).toInt().coerceIn(0, 255)
+    val b = (bSum / wSum).toInt().coerceIn(0, 255)
+    return Color.rgb(r, g, b)
 }
